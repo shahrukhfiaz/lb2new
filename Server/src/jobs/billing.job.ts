@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import { logger } from '../config/logger';
 import { checkAndDisableExpiredAccounts } from '../services/billing.service';
 
