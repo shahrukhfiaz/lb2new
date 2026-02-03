@@ -352,12 +352,21 @@ async function refreshToken() {
 // CRM-Style User Management Functions
 let allUsers = [];
 let filteredUsers = [];
+let activeSessionsUserIds = new Set(); // Store user IDs who are currently logged in
 
 async function loadUserData() {
     try {
-        const data = await apiCall('/users', 'GET', null, false);
-        allUsers = data.users || [];
+        const [usersData, sessionsData] = await Promise.all([
+            apiCall('/users', 'GET', null, false),
+            apiCall('/session-activity/active', 'GET', null, false).catch(() => ({ sessions: [] }))
+        ]);
+        
+        allUsers = usersData.users || [];
         filteredUsers = [...allUsers];
+        
+        // Extract user IDs from active sessions
+        const sessions = sessionsData.sessions || sessionsData || [];
+        activeSessionsUserIds = new Set(sessions.map(s => s.userId || s.user?.id).filter(Boolean));
         
         updateUserStats();
         renderUserTable();
@@ -389,7 +398,7 @@ async function renderUserTable() {
     if (filteredUsers.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="loading-row">
+                <td colspan="10" class="loading-row">
                     <i class="fas fa-search" style="margin-right: 0.5rem;"></i>
                     No users found matching your criteria
                 </td>
@@ -463,6 +472,12 @@ async function renderUserTable() {
                     ${user.status}
                 </span>
             </td>
+            <td style="text-align: center;">
+                ${activeSessionsUserIds.has(user.id) 
+                    ? '<span class="status-badge status-active" style="font-size: 0.75rem;"><i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i>Online</span>'
+                    : '<span class="status-badge" style="background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.5); border-color: rgba(255, 255, 255, 0.2); font-size: 0.75rem;">Offline</span>'
+                }
+            </td>
             <td style="white-space: nowrap;">${billingCycle}</td>
             <td style="white-space: nowrap; font-size: 0.875rem;">${cycleEndDate}</td>
             <td style="text-align: center;">
@@ -526,7 +541,7 @@ function showUserTableError(message) {
     const tbody = document.getElementById('userTableBody');
     tbody.innerHTML = `
         <tr>
-            <td colspan="9" class="loading-row" style="color: #fca5a5;">
+            <td colspan="10" class="loading-row" style="color: #fca5a5;">
                 <i class="fas fa-exclamation-triangle" style="margin-right: 0.5rem;"></i>
                 ${message}
             </td>
