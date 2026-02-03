@@ -389,7 +389,7 @@ async function renderUserTable() {
     if (filteredUsers.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="10" class="loading-row">
+                <td colspan="9" class="loading-row">
                     <i class="fas fa-search" style="margin-right: 0.5rem;"></i>
                     No users found matching your criteria
                 </td>
@@ -449,11 +449,10 @@ async function renderUserTable() {
                     </div>
                     <div class="user-details">
                         <h4>${user.email}</h4>
-                        <p>ID: ${user.id}</p>
+                        <p style="font-size: 0.75rem; color: rgba(255, 255, 255, 0.6); margin: 0.25rem 0 0 0;">ID: ${user.id}</p>
                     </div>
                 </div>
             </td>
-            <td>${user.email}</td>
             <td>
                 <span class="role-badge role-${user.role.toLowerCase().replace('_', '-')}">
                     ${user.role.replace('_', ' ')}
@@ -464,27 +463,32 @@ async function renderUserTable() {
                     ${user.status}
                 </span>
             </td>
-            <td>${billingCycle}</td>
-            <td>${cycleEndDate}</td>
-            <td>${daysRemaining !== null ? daysRemaining : 'N/A'}</td>
-            <td>${formatDate(user.createdAt)}</td>
-            <td>${user.lastLoginAt ? formatDate(user.lastLoginAt) : 'Never'}</td>
+            <td style="white-space: nowrap;">${billingCycle}</td>
+            <td style="white-space: nowrap; font-size: 0.875rem;">${cycleEndDate}</td>
+            <td style="text-align: center;">
+                ${daysRemaining !== null ? 
+                    `<span class="status-badge ${daysRemaining <= 7 ? 'status-disabled' : 'status-active'}" style="font-size: 0.75rem;">${daysRemaining}d</span>` 
+                    : '<span style="color: rgba(255, 255, 255, 0.5);">-</span>'
+                }
+            </td>
+            <td style="white-space: nowrap; font-size: 0.875rem;">${formatDate(user.createdAt)}</td>
+            <td style="white-space: nowrap; font-size: 0.875rem;">${user.lastLoginAt ? formatDate(user.lastLoginAt) : '<span style="color: rgba(255, 255, 255, 0.5);">Never</span>'}</td>
             <td>
-                <div class="action-buttons">
-                    <button class="action-btn edit" onclick="editUser('${user.id}')">
+                <div class="action-buttons" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button class="action-btn edit" onclick="editUser('${user.id}')" title="Edit User">
                         <i class="fas fa-edit"></i> Edit
                     </button>
-                    <button class="action-btn password" onclick="changeUserPassword('${user.id}')">
+                    <button class="action-btn password" onclick="changeUserPassword('${user.id}')" title="Change Password">
                         <i class="fas fa-key"></i> Password
                     </button>
-                    <button class="action-btn info" onclick="showAddPaymentModalForUser('${user.id}', '${user.email}')" style="background: #1E4A4A; color: #00D0B0; border-color: #00D0B0;">
+                    <button class="action-btn info" onclick="showAddPaymentModalForUser('${user.id}', '${user.email}')" style="background: #1E4A4A; color: #00D0B0; border-color: #00D0B0;" title="Add Payment">
                         <i class="fas fa-credit-card"></i> Payment
                     </button>
-                    <button class="action-btn toggle" onclick="toggleUserStatus('${user.id}', '${user.status}')">
+                    <button class="action-btn toggle" onclick="toggleUserStatus('${user.id}', '${user.status}')" title="${user.status === 'ACTIVE' ? 'Disable' : 'Enable'} User">
                         <i class="fas fa-power-off"></i> ${user.status === 'ACTIVE' ? 'Disable' : 'Enable'}
                     </button>
                     ${user.role !== 'SUPER_ADMIN' ? `
-                        <button class="action-btn delete" onclick="deleteUser('${user.id}')">
+                        <button class="action-btn delete" onclick="deleteUser('${user.id}')" title="Delete User">
                             <i class="fas fa-trash"></i> Delete
                         </button>
                     ` : ''}
@@ -522,7 +526,7 @@ function showUserTableError(message) {
     const tbody = document.getElementById('userTableBody');
     tbody.innerHTML = `
         <tr>
-            <td colspan="10" class="loading-row" style="color: #fca5a5;">
+            <td colspan="9" class="loading-row" style="color: #fca5a5;">
                 <i class="fas fa-exclamation-triangle" style="margin-right: 0.5rem;"></i>
                 ${message}
             </td>
