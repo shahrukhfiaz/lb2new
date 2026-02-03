@@ -23,9 +23,10 @@ export function startBillingJob(): void {
       const result = await checkAndDisableExpiredAccounts();
       
       if (result.disabled > 0) {
-        logger.warn(`Disabled ${result.disabled} expired account(s)`, {
-          expiredUserIds: result.expiredUsers,
-        });
+        logger.warn(
+          { disabled: result.disabled, expiredUserIds: result.expiredUsers },
+          `Disabled ${result.disabled} expired account(s)`
+        );
       } else {
         logger.info('No expired accounts found');
       }
@@ -41,9 +42,10 @@ export function startBillingJob(): void {
       const result = await checkAndDisableExpiredAccounts();
       
       if (result.disabled > 0) {
-        logger.warn(`Disabled ${result.disabled} expired account(s) on startup`, {
-          expiredUserIds: result.expiredUsers,
-        });
+        logger.warn(
+          { disabled: result.disabled, expiredUserIds: result.expiredUsers },
+          `Disabled ${result.disabled} expired account(s) on startup`
+        );
       }
     } catch (error) {
       logger.error({ err: error }, 'Error in initial billing expiration check');
