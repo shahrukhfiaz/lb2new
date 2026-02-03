@@ -22,7 +22,7 @@ A standalone portable application for capturing and uploading DAT Loadboard sess
 The app uses embedded default credentials. Optionally, you can create a `session-config.env` file in the same directory as the EXE:
 
 ```
-API_BASE_URL=http://67.205.189.32:3000/api/v1
+API_BASE_URL=http://167.99.147.118:3000/api/v1
 API_EMAIL=your-email@example.com
 API_PASSWORD=your-password
 ```

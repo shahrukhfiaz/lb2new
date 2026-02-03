@@ -33,7 +33,7 @@ class SessionCapture {
     ];
 
     const config = {
-      baseUrl: 'http://67.205.189.32:3000/api/v1',
+      baseUrl: 'http://167.99.147.118:3000/api/v1',
       email: 'superadmin@digitalstorming.com',
       password: 'ChangeMeSuperSecure123!'
     };

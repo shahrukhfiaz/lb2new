@@ -51,7 +51,7 @@ const SESSION_ID = process.argv[2] || process.env.SESSION_ID || 'cmgsg863g0001tp
 
 // API Configuration
 const API_CONFIG = {
-  baseUrl: process.env.API_BASE_URL || 'http://67.205.189.32:3000/api/v1',
+  baseUrl: process.env.API_BASE_URL || 'http://167.99.147.118:3000/api/v1',
   email: process.env.API_EMAIL || 'your-email@example.com',
   password: process.env.API_PASSWORD || 'your-password'
 };
