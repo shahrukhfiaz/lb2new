@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAT Workspace Backup - Optimized</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📦 DAT Workspace Backup</h1>
+      <p class="subtitle">Optimized Version - Faster uploads (98% smaller files)</p>
+    </div>
+
+    <div class="content">
+      <div class="warning-section" id="warningSection">
+        <div class="warning-box">
+          <strong>⚠️ Important:</strong>
+          <p>Please close the DAT Loadboard application before proceeding.</p>
+          <p style="margin-top: 8px; font-size: 12px;"><strong>Optimized:</strong> This version excludes cache files, reducing backup size by ~98%.</p>
+        </div>
+        <button id="startBtn" class="btn btn-primary">Start Backup</button>
+      </div>
+
+      <div class="progress-section" id="progressSection" style="display: none;">
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="status-message" id="statusMessage"></div>
+      </div>
+
+      <div class="result-section" id="resultSection" style="display: none;">
+        <div class="result success" id="successResult">
+          <h3>✅ Backup Complete!</h3>
+          <div id="successDetails"></div>
+          <button id="closeBtn" class="btn btn-primary" style="margin-top: 16px;">Close</button>
+        </div>
+        <div class="result error" id="errorResult">
+          <h3>❌ Error</h3>
+          <div id="errorDetails"></div>
+          <button id="closeBtnError" class="btn btn-primary" style="margin-top: 16px;">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
+

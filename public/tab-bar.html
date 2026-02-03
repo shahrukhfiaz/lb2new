@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAT Loadboard - Tab Bar</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      background: #1e1e1e;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+    
+    #dslb-tab-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 36px;
+      background: #202124;
+      border-bottom: 1px solid #2f2f2f;
+      display: flex;
+      align-items: flex-end;
+      padding: 0;
+      z-index: 999999;
+      -webkit-app-region: drag;
+    }
+    
+    /* Ensure empty space in tab bar is draggable */
+    #dslb-tab-bar::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      -webkit-app-region: drag;
+      pointer-events: none;
+      z-index: -1;
+    }
+    
+    #dslb-drag-area {
+      flex: 0 0 0px; /* No fixed width - only takes space if tabs don't fill */
+      min-width: 0;
+      -webkit-app-region: drag;
+      pointer-events: auto;
+      display: none; /* Hide drag area - tabs container will handle dragging */
+    }
+    
+    #dslb-tabs-container {
+      display: flex;
+      flex: 1;
+      overflow-x: auto;
+      overflow-y: hidden;
+      height: 100%;
+      -webkit-app-region: drag; /* Make container draggable - individual tabs will override */
+      scrollbar-width: thin;
+      scrollbar-color: #3c4043 #202124;
+      -ms-overflow-style: auto;
+      position: relative;
+      scroll-behavior: smooth;
+      align-items: flex-end;
+      padding-left: 4px;
+    }
+    
+    #dslb-tabs-container::-webkit-scrollbar {
+      height: 6px;
+    }
+    
+    #dslb-tabs-container::-webkit-scrollbar-track {
+      background: #202124;
+    }
+    
+    #dslb-tabs-container::-webkit-scrollbar-thumb {
+      background: #3c4043;
+      border-radius: 3px;
+    }
+    
+    #dslb-tabs-container::-webkit-scrollbar-thumb:hover {
+      background: #5f6368;
+    }
+    
+    .dslb-tab {
+      display: flex;
+      align-items: center;
+      min-width: 100px;
+      max-width: 240px;
+      height: 28px;
+      padding: 0 8px;
+      background: #2d2e30;
+      border: none;
+      border-radius: 8px 8px 0 0;
+      margin-right: 0;
+      margin-left: 1px;
+      cursor: pointer;
+      color: #b1b1b1;
+      position: relative;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+      flex-grow: 0;
+      overflow: hidden;
+      border-bottom: 1px solid transparent;
+    }
+    
+    .dslb-tab:not(:first-child)::before {
+      content: '';
+      position: absolute;
+      left: -1px;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background: #3c4043;
+      z-index: 1;
+    }
+    
+    .dslb-tab.active {
+      background: #3c4043;
+      color: #e8eaed;
+      border-bottom: 1px solid #202124;
+      z-index: 2;
+    }
+    
+    .dslb-tab.active::before {
+      display: none;
+    }
+    
+    .dslb-tab.editing {
+      background: #4a4d52;
+      border: 1px solid #8ab4f8;
+      border-bottom: 1px solid #8ab4f8;
+      box-shadow: 0 0 0 1px rgba(138, 180, 248, 0.3);
+      outline: none;
+      z-index: 3;
+    }
+    
+    .dslb-tab.editing.active {
+      background: #4a4d52;
+      border: 1px solid #8ab4f8;
+      border-bottom: 1px solid #8ab4f8;
+    }
+    
+    .dslb-tab.editing::before {
+      display: none;
+    }
+    
+    .dslb-tab-favicon {
+      width: 16px;
+      height: 16px;
+      margin-right: 6px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa0a6;
+      font-size: 14px;
+    }
+    
+    .dslb-tab.active .dslb-tab-favicon {
+      color: #8ab4f8;
+    }
+    
+    .dslb-tab-title {
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 12px;
+      flex: 1;
+      padding: 0;
+      margin: 0;
+      outline: none;
+      cursor: default;
+      min-width: 40px;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      width: 100%;
+      -webkit-app-region: no-drag;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 400;
+    }
+    
+    .dslb-tab-title.editing {
+      cursor: text;
+      pointer-events: auto;
+      user-select: text;
+      -webkit-user-select: text;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 2px;
+      padding: 0 2px;
+      margin: 0 -2px;
+    }
+    
+    .dslb-edit-icon {
+      width: 16px;
+      height: 16px;
+      opacity: 0;
+      margin-left: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa0a6;
+      transition: opacity 0.15s;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+      font-size: 11px;
+      border-radius: 2px;
+    }
+    
+    .dslb-tab:hover .dslb-edit-icon {
+      opacity: 1;
+    }
+    
+    .dslb-edit-icon:hover {
+      background: rgba(255,255,255,0.1);
+      color: #e8eaed;
+    }
+    
+    .dslb-tab.editing .dslb-edit-icon {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    .dslb-tab.editing .dslb-tab-close {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    .dslb-tab-close {
+      width: 18px;
+      height: 18px;
+      background: transparent;
+      border: none;
+      color: #9aa0a6;
+      cursor: pointer;
+      margin-left: 4px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      padding: 0;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    
+    .dslb-tab:hover .dslb-tab-close {
+      opacity: 1;
+    }
+    
+    .dslb-tab-close:hover {
+      background: rgba(255,255,255,0.15);
+      color: #e8eaed;
+    }
+    
+    
+    #dslb-new-tab-btn {
+      width: 28px;
+      height: 28px;
+      background: transparent;
+      border: none;
+      color: #9aa0a6;
+      cursor: pointer;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      margin-left: 2px;
+      margin-right: 2px;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+    }
+    
+    #dslb-new-tab-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #e8eaed;
+    }
+    
+    #dslb-window-controls {
+      display: flex;
+      gap: 0;
+      -webkit-app-region: no-drag;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+      padding: 0;
+      flex-shrink: 0;
+      flex-grow: 0;
+    }
+    
+    #dslb-window-controls button {
+      width: 46px;
+      height: 32px;
+      min-width: 46px;
+      max-width: 46px;
+      background: transparent;
+      border: none;
+      color: #9aa0a6;
+      cursor: pointer;
+      border-radius: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 0;
+      line-height: 1;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      box-sizing: border-box;
+      position: relative;
+      letter-spacing: 0;
+      vertical-align: middle;
+    }
+    
+    #dslb-minimize-btn {
+      font-size: 11px;
+      font-weight: 500;
+      padding-top: 1px;
+    }
+    
+    #dslb-maximize-btn {
+      font-size: 10px;
+      font-weight: 400;
+      padding-top: 1px;
+    }
+    
+    #dslb-close-btn {
+      font-size: 13px;
+      font-weight: 300;
+      padding-top: 0;
+    }
+    
+    #dslb-window-controls button:hover {
+      background: rgba(255,255,255,0.1);
+      color: #e8eaed;
+    }
+    
+    #dslb-close-btn:hover {
+      background: rgba(232,234,237,0.15);
+      color: #e8eaed;
+    }
+  </style>
+</head>
+<body>
+  <div id="dslb-tab-bar">
+    <div id="dslb-tabs-container">
+      <button id="dslb-new-tab-btn">+</button>
+    </div>
+    <div id="dslb-window-controls">
+      <button id="dslb-minimize-btn">−</button>
+      <button id="dslb-maximize-btn">□</button>
+      <button id="dslb-close-btn">×</button>
+    </div>
+  </div>
+
+  <script>
+    let tabs = [];
+    let activeTabId = null;
+    let activeTabInputValue = null;
+    let resizeHandler = null;
+
+    // Tab management
+    window.dslbTabManager = {
+      updateTabs(tabsData) {
+        tabs = tabsData;
+        activeTabId = tabsData.find(t => t.active)?.id || null;
+        this.renderTabs();
+      },
+      
+      renderTabs() {
+        const container = document.getElementById('dslb-tabs-container');
+        if (!container) return;
+        
+        // Get the plus button (it's already in the container)
+        const plusButton = document.getElementById('dslb-new-tab-btn');
+        
+        // Store current active tab's input value if it exists
+        const activeTabInput = container.querySelector('.dslb-tab[data-tab-id="' + activeTabId + '"] .dslb-tab-title');
+        if (activeTabInput && activeTabInput === document.activeElement) {
+          activeTabInputValue = activeTabInput.value;
+        } else {
+          activeTabInputValue = null;
+        }
+        
+        // Calculate dynamic tab width based on number of tabs
+        const containerWidth = container.clientWidth || container.offsetWidth;
+        const plusButtonWidth = 32; // Plus button width
+        const windowControlsWidth = 104; // 3 buttons * 32px + margins
+        const availableWidth = containerWidth - plusButtonWidth - windowControlsWidth - 16; // 16px for padding/margins
+        const tabCount = tabs.length;
+        const minTabWidth = 100;
+        const maxTabWidth = 240;
+        const preferredTabWidth = 140;
+        
+        // Calculate optimal tab width
+        let tabWidth;
+        if (tabCount === 0) {
+          tabWidth = preferredTabWidth;
+        } else {
+          const calculatedWidth = Math.floor(availableWidth / tabCount);
+          if (calculatedWidth >= preferredTabWidth) {
+            // If we have space, use preferred width (140px) or calculated if less
+            tabWidth = Math.max(preferredTabWidth, Math.min(calculatedWidth, maxTabWidth));
+          } else {
+            // If space is limited, use calculated width but not less than minimum
+            tabWidth = Math.max(minTabWidth, calculatedWidth);
+          }
+        }
+        
+        // Render tabs HTML with dynamic width
+        const tabsHTML = tabs.map(tab => {
+          // Use stored value if this is the active tab and input was being edited
+          const displayTitle = (tab.id === activeTabId && activeTabInputValue !== null) ? activeTabInputValue : tab.title;
+          // Truncate long titles for better display with many tabs (CSS will handle ellipsis, but we can also truncate here)
+          const escapedTitle = displayTitle.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+          const originalTitle = tab.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+          // No loading indicators - title always stays as "DAT One" unless user edits
+          
+          return `
+            <div class="dslb-tab ${tab.active ? 'active' : ''}" data-tab-id="${tab.id}" title="${displayTitle.replace(/"/g, '&quot;')}" style="width: ${tabWidth}px;">
+              <span class="dslb-tab-favicon" title="DAT">●</span>
+              <input type="text" value="${escapedTitle}" class="dslb-tab-title" readonly 
+                onblur="event.stopPropagation(); window.dslbTabManager.finishEditing('${tab.id}', this.value, '${originalTitle}')" 
+                onkeydown="event.stopPropagation(); if(event.key==='Enter') { event.preventDefault(); this.blur(); } else if(event.key==='Escape') { this.value = '${originalTitle}'; this.blur(); }"
+                onmousedown="event.stopPropagation();"
+                title="${displayTitle.replace(/"/g, '&quot;')}">
+              <span class="dslb-edit-icon" onclick="event.stopPropagation(); window.dslbTabManager.startEditing('${tab.id}')" title="Edit tab name">✎</span>
+              <button class="dslb-tab-close" onclick="event.stopPropagation(); window.dslbTabManager.closeTab('${tab.id}')" title="Close tab">×</button>
+            </div>
+          `;
+        }).join('');
+        
+        // Clear container and add tabs, then add plus button after
+        container.innerHTML = tabsHTML;
+        if (plusButton && plusButton.parentNode !== container) {
+          container.appendChild(plusButton);
+        } else if (!container.querySelector('#dslb-new-tab-btn')) {
+          // Plus button was removed, recreate it
+          const newPlusBtn = document.createElement('button');
+          newPlusBtn.id = 'dslb-new-tab-btn';
+          newPlusBtn.textContent = '+';
+          newPlusBtn.title = 'New tab';
+          newPlusBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+              if (window.dslbSession && window.dslbSession.newWindow) {
+                const result = await window.dslbSession.newWindow();
+                console.log('New tab created:', result);
+              } else {
+                console.error('dslbSession.newWindow not available');
+              }
+            } catch (error) {
+              console.error('Error creating new tab:', error);
+            }
+          });
+          container.appendChild(newPlusBtn);
+        }
+        
+        // Recalculate tab widths when window resizes
+        const recalculateTabWidths = () => {
+          const containerWidth = container.clientWidth || container.offsetWidth;
+          const plusButtonWidth = 32;
+          const windowControlsWidth = 104;
+          const availableWidth = containerWidth - plusButtonWidth - windowControlsWidth - 16;
+          const tabCount = tabs.length;
+          const minTabWidth = 100;
+          const maxTabWidth = 240;
+          const preferredTabWidth = 140;
+          
+          let newTabWidth;
+          if (tabCount === 0) {
+            newTabWidth = preferredTabWidth;
+          } else {
+            const calculatedWidth = Math.floor(availableWidth / tabCount);
+            if (calculatedWidth >= preferredTabWidth) {
+              newTabWidth = Math.max(preferredTabWidth, Math.min(calculatedWidth, maxTabWidth));
+            } else {
+              newTabWidth = Math.max(minTabWidth, calculatedWidth);
+            }
+          }
+          
+          // Update all tab widths
+          container.querySelectorAll('.dslb-tab').forEach(tabEl => {
+            tabEl.style.width = newTabWidth + 'px';
+          });
+        };
+        
+        // Recalculate on window resize (remove old listener if exists)
+        if (resizeHandler) {
+          window.removeEventListener('resize', resizeHandler);
+        }
+        resizeHandler = recalculateTabWidths;
+        window.addEventListener('resize', resizeHandler);
+        
+        // Auto-scroll to active tab if it's not visible
+        if (activeTabId) {
+          setTimeout(() => {
+            const activeTabEl = container.querySelector(`.dslb-tab[data-tab-id="${activeTabId}"]`);
+            if (activeTabEl) {
+              activeTabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            }
+          }, 100);
+        }
+        
+        // Re-attach click handler to tab container (not input)
+        container.querySelectorAll('.dslb-tab').forEach(tabEl => {
+          const tabId = tabEl.dataset.tabId;
+          const input = tabEl.querySelector('.dslb-tab-title');
+          const closeBtn = tabEl.querySelector('.dslb-tab-close');
+          
+          // Only switch tab when clicking on the tab area, not input, edit icon, or close button
+          const editIcon = tabEl.querySelector('.dslb-edit-icon');
+          tabEl.addEventListener('click', (e) => {
+            if (e.target === input || e.target === editIcon || e.target === closeBtn || 
+                input.contains(e.target) || editIcon.contains(e.target) || closeBtn.contains(e.target)) {
+              return; // Don't switch tab if clicking on input, edit icon, or close button
+            }
+            window.dslbTabManager.switchTab(tabId);
+          });
+        });
+      },
+      
+      switchTab(tabId) {
+        if (window.dslbSession && window.dslbSession.switchTab) {
+          window.dslbSession.switchTab(tabId);
+        }
+      },
+      
+      closeTab(tabId) {
+        if (window.dslbSession && window.dslbSession.closeTab) {
+          window.dslbSession.closeTab(tabId);
+        }
+      },
+      
+      startEditing(tabId) {
+        const tabEl = document.querySelector(`.dslb-tab[data-tab-id="${tabId}"]`);
+        if (!tabEl) return;
+        
+        const input = tabEl.querySelector('.dslb-tab-title');
+        if (!input) return;
+        
+        // Add editing class to tab for visual feedback
+        tabEl.classList.add('editing');
+        
+        // Enable editing
+        input.removeAttribute('readonly');
+        input.classList.add('editing');
+        input.focus();
+        input.select();
+      },
+      
+      finishEditing(tabId, newValue, originalValue) {
+        const tabEl = document.querySelector(`.dslb-tab[data-tab-id="${tabId}"]`);
+        if (!tabEl) return;
+        
+        const input = tabEl.querySelector('.dslb-tab-title');
+        if (!input) return;
+        
+        // Remove editing class from tab
+        tabEl.classList.remove('editing');
+        
+        // Disable editing
+        input.setAttribute('readonly', 'readonly');
+        input.classList.remove('editing');
+        
+        // Update title if changed
+        if (newValue && newValue.trim() !== originalValue) {
+          if (window.dslbSession && window.dslbSession.updateTabTitle) {
+            window.dslbSession.updateTabTitle(tabId, newValue.trim());
+          }
+        } else {
+          // Restore original if empty or cancelled
+          input.value = originalValue;
+        }
+      },
+      
+      updateTitle(tabId, newTitle) {
+        if (window.dslbSession && window.dslbSession.updateTabTitle) {
+          window.dslbSession.updateTabTitle(tabId, newTitle);
+        }
+      }
+    };
+    
+    // New tab button
+    const newTabBtn = document.getElementById('dslb-new-tab-btn');
+    if (newTabBtn) {
+      newTabBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          if (window.dslbSession && window.dslbSession.newWindow) {
+            const result = await window.dslbSession.newWindow();
+            console.log('New tab created:', result);
+          } else {
+            console.error('dslbSession.newWindow not available');
+          }
+        } catch (error) {
+          console.error('Error creating new tab:', error);
+        }
+      });
+    }
+    
+    // Window control buttons
+    const minimizeBtn = document.getElementById('dslb-minimize-btn');
+    if (minimizeBtn) {
+      minimizeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.dslbSession && window.dslbSession.minimizeWindow) {
+          window.dslbSession.minimizeWindow();
+        }
+      });
+    }
+    
+    const maximizeBtn = document.getElementById('dslb-maximize-btn');
+    if (maximizeBtn) {
+      maximizeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.dslbSession && window.dslbSession.maximizeWindow) {
+          window.dslbSession.maximizeWindow();
+        }
+      });
+    }
+    
+    const closeBtn = document.getElementById('dslb-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.dslbSession && window.dslbSession.closeWindow) {
+          window.dslbSession.closeWindow();
+        }
+      });
+    }
+    
+    // Set up IPC listener for tab updates when page loads
+    if (window.dslbSession && window.dslbSession.onTabsUpdate) {
+      window.dslbSession.onTabsUpdate((tabsData) => {
+        if (window.dslbTabManager) {
+          window.dslbTabManager.updateTabs(tabsData);
+        }
+      });
+    }
+    
+    // Initial render (will be updated via IPC)
+    window.dslbTabManager.updateTabs([]);
+    
+    // Request initial tab data
+    if (window.dslbSession && window.dslbSession.getAllTabs) {
+      window.dslbSession.getAllTabs().then(tabs => {
+        if (window.dslbTabManager && tabs && tabs.length > 0) {
+          window.dslbTabManager.updateTabs(tabs);
+        }
+      }).catch(err => {
+        console.error('Failed to get initial tabs:', err);
+      });
+    }
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,134 @@
+{
+  "name": "dat-loadboard",
+  "version": "1.0.0",
+  "main": "src/main/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder --publish never",
+    "create-icon": "node scripts/create-windows-icon.js",
+    "embed-icon": "node scripts/embed-icon.js",
+    "prebuild": "npm run create-icon",
+    "predist": "npm run create-icon",
+    "postbuild": "npm run embed-icon",
+    "postdist": "npm run embed-icon"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "DAT Loadboard",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.13.0",
+    "dotenv": "^17.2.3",
+    "extract-zip": "^2.0.1",
+    "form-data": "^4.0.4",
+    "https-proxy-agent": "^7.0.6",
+    "macaddress": "^0.5.3",
+    "node-machine-id": "^1.1.12"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12",
+    "rcedit": "^4.0.1",
+    "sharp": "^0.34.4",
+    "to-ico": "^1.1.5"
+  },
+  "build": {
+    "appId": "com.dat.loadboard",
+    "productName": "DAT Loadboard",
+    "directories": {
+      "output": "release-icon-embed",
+      "buildResources": "build"
+    },
+    "icon": "build/icon.ico",
+    "afterPack": "scripts/after-pack.js",
+    "afterAllArtifactBuild": "scripts/after-all-artifacts.js",
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "package.json",
+      ".env",
+      "node_modules/dotenv/**/*",
+      "node_modules/adm-zip/**/*",
+      "node_modules/axios/**/*",
+      "node_modules/extract-zip/**/*",
+      "node_modules/form-data/**/*",
+      "!**/*.md",
+      "!**/*.bat",
+      "!**/*.ps1",
+      "!CLOUD_CONFIG.env",
+      "!session-config.env",
+      "!session-config.env.example",
+      "!session-capture-script.js",
+      "!mark-session-ready.js",
+      "!test-auth.*",
+      "!test-session-status.js",
+      "!setup-session-capture.bat",
+      "!capture-session.*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "public/assets/icon.ico",
+      "public/assets/icon.png"
+    ],
+    "extraFiles": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
+      "signAndEditExecutable": false,
+      "signtoolOptions": {
+        "publisherName": "DAT"
+      },
+      "appId": "com.dat.loadboard",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
+      "shortcutName": "DAT Loadboard",
+      "include": "build/installer.nsh",
+      "installerLanguages": [
+        "en_US"
+      ],
+      "language": "1033",
+      "multiLanguageInstaller": false,
+      "runAfterFinish": true,
+      "menuCategory": "DAT Loadboard",
+      "artifactName": "${productName}-${version}-Setup.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "allowElevation": true,
+      "perMachine": true,
+      "license": null
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "public/assets/icon.png",
+      "category": "Office"
+    }
+  }
+}

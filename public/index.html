@@ -1,0 +1,71 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' http://localhost:4000 https://67.205.189.32:4000 https://67.205.189.32:3000 https://67.205.189.32:8080 https://httpbin.org https://icanhazip.com https://ipapi.co https://whatismyipaddress.com https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" />
+    <title>DAT Freight & Analytics</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="login-container">
+      <div class="login-form">
+        <div class="logo-section">
+          <img src="./assets/dat-logo-email.svg" alt="DAT Freight & Analytics" class="dat-logo" />
+        </div>
+        
+        <h1 class="login-title">Log In</h1>
+        <p class="login-subtitle">To continue to your DAT account</p>
+        
+                <form id="loginForm" class="form">
+                  <div class="form-group">
+                    <input type="email" id="email" placeholder="Email address*" required />
+                  </div>
+                  <div class="form-group" id="passwordGroup" style="display: none;">
+                    <input type="password" id="password" placeholder="Password*" required />
+                  </div>
+                  <div id="statusBanner" class="status-banner"></div>
+                  <button type="submit" class="btn-continue">CONTINUE</button>
+                </form>
+        
+      </div>
+
+      <div id="sessionPanel" class="hidden">
+        <h2>Available Sessions</h2>
+        <p>Select a session to launch your DAT workspace.</p>
+        <div id="sessionList" class="session-list"></div>
+        <div class="button-group">
+          <button class="btn-secondary" id="logoutBtn">Sign out</button>
+          <button class="btn-info" id="testIPBtn" onclick="testIP()">🌐 Check My IP Address</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./renderer.js"></script>
+    <script>
+      async function testIP() {
+        const statusBanner = document.getElementById('statusBanner');
+        statusBanner.textContent = 'Opening IP check website...';
+        statusBanner.className = 'status-banner info';
+        
+        try {
+          // Use IPC to open IP check with proxy
+          await window.dslb.testIP();
+          
+          statusBanner.textContent = 'IP check website opened (routing through proxy)';
+          statusBanner.className = 'status-banner success';
+          
+          // Clear the message after 3 seconds
+          setTimeout(() => {
+            statusBanner.textContent = 'Ready.';
+            statusBanner.className = 'status-banner';
+          }, 3000);
+        } catch (error) {
+          statusBanner.textContent = 'Error opening IP check: ' + error.message;
+          statusBanner.className = 'status-banner error';
+        }
+      }
+
+    </script>
+  </body>
+</html>

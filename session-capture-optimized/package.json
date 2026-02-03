@@ -1,0 +1,50 @@
+{
+  "name": "dat-workspace-backup-optimized",
+  "version": "1.0.0",
+  "description": "DAT Loadboard Workspace Backup Tool - Optimized (98% smaller files)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder --publish never",
+    "package": "node package-portable.js"
+  },
+  "author": "DAT",
+  "license": "ISC",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.13.0"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.dat.workspacebackup.optimized",
+    "productName": "DAT Workspace Backup - Optimized",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "build/icon.ico"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}
+

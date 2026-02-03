@@ -1,0 +1,11 @@
+﻿<svg width=\"120\" height=\"120\" viewBox=\"0 0 120 120\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">
+  <defs>
+    <linearGradient id=\"stormGradient\" x1=\"0\" y1=\"0\" x2=\"120\" y2=\"120\" gradientUnits=\"userSpaceOnUse\">
+      <stop stop-color=\"#2563EB\"/>
+      <stop offset=\"1\" stop-color=\"#38BDF8\"/>
+    </linearGradient>
+  </defs>
+  <rect x=\"10\" y=\"10\" width=\"100\" height=\"100\" rx=\"24\" fill=\"url(#stormGradient)\"/>
+  <path d=\"M46 34L66 34C78 34 88 44 88 56C88 66 81 74 71 76L73 86H58L60 70H50L46 56H60L58 34H46Z\" fill=\"white\" opacity=\"0.9\"/>
+  <circle cx=\"52\" cy=\"90\" r=\"6\" fill=\"white\" opacity=\"0.85\"/>
+</svg>

@@ -1,0 +1,1405 @@
+require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const axios = require('axios').default;
+const AdmZip = require('adm-zip');
+const { initializeProxy, createProxiedSession, testProxyConnection } = require('./proxyConfig');
+
+// Comprehensive session validation function (moved to global scope)
+const validateSessionCompleteness = (sessionDir) => {
+  const validation = {
+    isComplete: true,
+    missing: [],
+    present: []
+  };
+  
+  // Critical components for login state
+  const criticalComponents = [
+    { name: 'Network Directory', path: path.join(sessionDir, 'Network') },
+    { name: 'Local Storage Directory', path: path.join(sessionDir, 'Local Storage') },
+    { name: 'Session Storage Directory', path: path.join(sessionDir, 'Session Storage') },
+    { name: 'Preferences File', path: path.join(sessionDir, 'Preferences') }
+  ];
+  
+  for (const component of criticalComponents) {
+    if (fs.existsSync(component.path)) {
+      validation.present.push(component.name);
+      try {
+        if (fs.statSync(component.path).isDirectory()) {
+          const contents = fs.readdirSync(component.path);
+          if (contents.length === 0) {
+            console.log(`?? ${component.name} is empty`);
+            validation.missing.push(`${component.name} (empty)`);
+            validation.isComplete = false;
+          } else {
+            console.log(`?? ${component.name} contains ${contents.length} items`);
+          }
+        } else {
+          console.log(`?? ${component.name} found`);
+        }
+      } catch (err) {
+        validation.missing.push(`${component.name} (unreadable)`);
+        validation.isComplete = false;
+      }
+    } else {
+      validation.missing.push(component.name);
+      validation.isComplete = false;
+    }
+  }
+  
+  return validation;
+};
+
+const BRAND_NAME = process.env.APP_BRAND_NAME || 'Digital Storming Loadboard';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:4000/api/v1';
+const DEFAULT_DAT_URL = process.env.DEFAULT_DAT_URL || 'https://one.dat.com';
+const PROXY_USERNAME =
+  process.env.CLOUD_PROXY_USERNAME ||
+  process.env.CLOUD_PROXY_USER ||
+  process.env.PROXY_USERNAME ||
+  '';
+const PROXY_PASSWORD =
+  process.env.CLOUD_PROXY_PASSWORD ||
+  process.env.CLOUD_PROXY_PASS ||
+  process.env.PROXY_PASSWORD ||
+  '';
+const hasProxyCredentials = Boolean(PROXY_USERNAME && PROXY_PASSWORD);
+
+let loginWindow = null;
+let datWindow = null;
+let tokens = null;
+let currentUser = null;
+let currentSessionId = null; // Track the current session ID for super admin
+let http = axios.create({ baseURL: API_BASE_URL, timeout: 45000 });
+
+function resolvePublicPath(...segments) {
+  return path.join(__dirname, '../../public', ...segments);
+}
+
+function sanitizePartitionName(partition) {
+  if (!partition) return null;
+  return partition.replace(/^persist:/, '');
+}
+
+function findSessionDirectory(sessionId, partition) {
+  const userDataPath = app.getPath('userData');
+  const partitionsDir = path.join(userDataPath, 'Partitions');
+  const sanitizedPartition = sanitizePartitionName(partition);
+
+  if (sanitizedPartition) {
+    const candidate = path.join(partitionsDir, sanitizedPartition);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const defaultCandidate = path.join(partitionsDir, `session-${sessionId}`);
+  if (fs.existsSync(defaultCandidate)) {
+    return defaultCandidate;
+  }
+
+  if (fs.existsSync(partitionsDir)) {
+    const partitions = fs.readdirSync(partitionsDir);
+    const matchingPartition =
+      partitions.find((name) => name.includes(sessionId)) ||
+      partitions.find((name) => name.includes('session'));
+
+    if (matchingPartition) {
+      return path.join(partitionsDir, matchingPartition);
+    }
+  }
+
+  return null;
+}
+
+async function uploadSessionFromDirectory(sessionDataPath, sessionId) {
+  const sessionFiles = fs.readdirSync(sessionDataPath);
+  console.log(`?? Session contains: ${sessionFiles.join(', ')}`);
+
+  const cookiesPath = path.join(sessionDataPath, 'Network', 'Cookies');
+  if (fs.existsSync(cookiesPath)) {
+    const cookiesSize = fs.statSync(cookiesPath).size;
+    console.log(`?? Cookies file found: ${cookiesSize} bytes`);
+  } else {
+    console.log(`?? WARNING: No Cookies file found! Session may not have authentication data.`);
+  }
+
+  const buildZipPath = () => path.join(os.tmpdir(), `superadmin-session-${Date.now()}.zip`);
+
+  // COMPLETE FILE CAPTURE: Include ALL files without any exclusions
+  const shouldIncludeFile = (filename) => {
+    // Include EVERY SINGLE FILE - no exclusions whatsoever
+    // User specifically requested complete folder and files capture
+    return true;
+  };
+
+  // Safe file reading function with retry logic (reduced retries since Chromium locking is prevented)
+  const safeReadFile = (filePath, maxRetries = 2, isCritical = false) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return fs.readFileSync(filePath);
+      } catch (error) {
+        if (error.code === 'EBUSY' || error.code === 'EACCES') {
+          console.log(`?? File locked, retrying ${i + 1}/${maxRetries}: ${filePath}`);
+          if (i < maxRetries - 1) {
+            // Reduced wait time since Chromium locking is prevented
+            const waitTime = isCritical ? 200 : 100; // Much shorter wait
+            const start = Date.now();
+            while (Date.now() - start < waitTime) {
+              // Busy wait
+            }
+            continue;
+          }
+        }
+        throw error;
+      }
+    }
+  };
+
+  // Custom zip creation with error handling
+  const createZipSafely = () => {
+    const zip = new AdmZip();
+    const zipPath = buildZipPath();
+    const criticalFilesPreserved = [];
+    
+    try {
+      // Add files individually with error handling
+      const addDirectoryRecursively = (dirPath, zipPathPrefix = '') => {
+        const items = fs.readdirSync(dirPath);
+        
+        for (const item of items) {
+          const itemPath = path.join(dirPath, item);
+          const relativePath = path.join(zipPathPrefix, item);
+          const stat = fs.statSync(itemPath);
+          
+          if (stat.isDirectory()) {
+            // Recursively add subdirectories
+            addDirectoryRecursively(itemPath, relativePath);
+          } else {
+            // Check if file should be excluded
+            if (shouldIncludeFile(relativePath)) {
+              try {
+                // Check if this is a critical file that we must preserve
+                const isCriticalFile = relativePath.toLowerCase().includes('cookies') || 
+                                      relativePath.toLowerCase().includes('local storage') ||
+                                      relativePath.toLowerCase().includes('session storage') ||
+                                      relativePath.toLowerCase().includes('preferences');
+                
+                // Special handling for Cookies file - use multiple retry strategies
+                if (relativePath.toLowerCase().includes('cookies')) {
+                  let cookiesCaptured = false;
+                  
+                  // Strategy 1: Try normal file read
+                  try {
+                    const fileContent = fs.readFileSync(itemPath);
+                    zip.addFile(relativePath, fileContent);
+                    console.log(`?? SUCCESS: Cookies file captured normally`);
+                    cookiesCaptured = true;
+                  } catch (error) {
+                    console.log(`?? Cookies file locked, trying alternative strategies...`);
+                  }
+                  
+                  // Strategy 2: Try with different file access flags
+                  if (!cookiesCaptured) {
+                    try {
+                      const fileContent = fs.readFileSync(itemPath, { flag: 'r' });
+                      zip.addFile(relativePath, fileContent);
+                      console.log(`?? SUCCESS: Cookies file captured with 'r' flag`);
+                      cookiesCaptured = true;
+                    } catch (error) {
+                      console.log(`?? Strategy 2 failed: ${error.message}`);
+                    }
+                  }
+                  
+                  // Strategy 3: Try copying to temp file first
+                  if (!cookiesCaptured) {
+                    try {
+                      const tempPath = path.join(os.tmpdir(), `cookies-${Date.now()}.tmp`);
+                      fs.copyFileSync(itemPath, tempPath);
+                      const fileContent = fs.readFileSync(tempPath);
+                      zip.addFile(relativePath, fileContent);
+                      fs.unlinkSync(tempPath);
+                      console.log(`?? SUCCESS: Cookies file captured via temp copy`);
+                      cookiesCaptured = true;
+                    } catch (error) {
+                      console.log(`?? Strategy 3 failed: ${error.message}`);
+                    }
+                  }
+                  
+                  // Strategy 4: Try with longer wait and retry
+                  if (!cookiesCaptured) {
+                    for (let attempt = 1; attempt <= 5; attempt++) {
+                      try {
+                        // Use synchronous wait instead of async
+                        const waitTime = 1000 * attempt;
+                        const start = Date.now();
+                        while (Date.now() - start < waitTime) {
+                          // Busy wait
+                        }
+                        const fileContent = fs.readFileSync(itemPath);
+                        zip.addFile(relativePath, fileContent);
+                        console.log(`?? SUCCESS: Cookies file captured on attempt ${attempt}`);
+                        cookiesCaptured = true;
+                        break;
+                      } catch (error) {
+                        console.log(`?? Attempt ${attempt} failed: ${error.message}`);
+                      }
+                    }
+                  }
+                  
+                  if (cookiesCaptured) {
+                    criticalFilesPreserved.push(relativePath);
+                    console.log(`?? CRITICAL SUCCESS: Cookies file captured successfully!`);
+                  } else {
+                    console.log(`?? CRITICAL FAILURE: All strategies failed to capture Cookies file!`);
+                    console.log(`?? WARNING: Session may not maintain login state without Cookies!`);
+                  }
+                } else {
+                  // Normal file handling for non-Cookies files
+                  const fileContent = safeReadFile(itemPath, isCriticalFile ? 3 : 2, isCriticalFile);
+                  zip.addFile(relativePath, fileContent);
+                  
+                  // Log files being included
+                  if (isCriticalFile) {
+                    console.log(`?? Including critical file: ${relativePath}`);
+                    criticalFilesPreserved.push(relativePath);
+                  } else {
+                    console.log(`📄 Including file: ${relativePath}`);
+                  }
+                }
+              } catch (error) {
+                if (error.code === 'EBUSY' || error.code === 'EACCES') {
+                  // For critical files, we should not skip them - try alternative approach
+                  const isCriticalFile = relativePath.toLowerCase().includes('cookies');
+                  if (isCriticalFile) {
+                    console.log(`?? CRITICAL: Cookies file is locked, trying alternative approach...`);
+                    // Try to copy the file with a different method
+                    try {
+                      const fs = require('fs');
+                      const fileContent = fs.readFileSync(itemPath, { flag: 'r' });
+                      zip.addFile(relativePath, fileContent);
+                      console.log(`?? CRITICAL: Successfully captured Cookies file!`);
+                      criticalFilesPreserved.push(relativePath);
+                    } catch (altError) {
+                      console.log(`?? CRITICAL ERROR: Cannot capture Cookies file: ${altError.message}`);
+                      console.log(`?? WARNING: Session may not maintain login state without Cookies!`);
+                    }
+                  } else {
+                    console.log(`?? Skipping locked file: ${relativePath}`);
+                  }
+                } else {
+                  console.log(`?? Error reading file ${relativePath}: ${error.message}`);
+                }
+              }
+            } else {
+              console.log(`📄 Including file: ${relativePath}`);
+            }
+          }
+        }
+      };
+      
+      addDirectoryRecursively(sessionDataPath);
+      
+      zip.writeZip(zipPath);
+      const zipSize = fs.statSync(zipPath).size;
+      console.log(`? Session zipped: ${zipPath} (${zipSize} bytes)`);
+      
+      // Log summary of critical files preserved
+      if (criticalFilesPreserved.length > 0) {
+        console.log(`?? Critical files preserved for login state: ${criticalFilesPreserved.length}`);
+        criticalFilesPreserved.forEach(file => console.log(`   ✅ ${file}`));
+      } else {
+        console.log(`⚠️ WARNING: No critical login files found! Session may not maintain login state.`);
+      }
+      
+      return zipPath;
+    } catch (error) {
+      console.error(`?? Error creating zip: ${error.message}`);
+      throw error;
+    }
+  };
+
+  let zipPath;
+  try {
+    console.log('?? Creating session zip (with enhanced locked file handling)...');
+    zipPath = createZipSafely();
+
+    const uploadRequest = await http.post(`/sessions/${sessionId}/request-upload`, {
+      contentType: 'application/zip',
+    });
+
+    const { url: uploadUrl, bundleKey } = uploadRequest.data;
+    console.log(`?? Uploading session bundle: ${bundleKey}`);
+
+    const zipBuffer = fs.readFileSync(zipPath);
+    await axios.put(uploadUrl, zipBuffer, {
+      headers: { 'Content-Type': 'application/zip' },
+    });
+
+    console.log(`? Session uploaded successfully`);
+
+    await http.post(`/sessions/${sessionId}/complete-upload`, {
+      checksum: bundleKey,
+      fileSizeBytes: zipBuffer.length,
+    });
+
+    return { bundleKey };
+  } finally {
+    if (zipPath && fs.existsSync(zipPath)) {
+      try {
+        fs.unlinkSync(zipPath);
+      } catch (cleanupError) {
+        console.log(`?? Could not remove temp zip: ${cleanupError.message}`);
+      }
+    }
+  }
+}
+
+function createLoginWindow() {
+  loginWindow = new BrowserWindow({
+    width: 480,
+    height: 660,
+    title: BRAND_NAME,
+    autoHideMenuBar: true,
+    resizable: false,
+    icon: resolvePublicPath('assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      enableRemoteModule: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+    },
+  });
+
+  loginWindow.loadFile(resolvePublicPath('index.html'));
+  loginWindow.on('closed', () => {
+    loginWindow = null;
+  });
+}
+
+app.on('login', (event, webContents, request, authInfo, callback) => {
+  if (!authInfo || !authInfo.isProxy || !hasProxyCredentials) {
+    return;
+  }
+
+  event.preventDefault();
+  callback(PROXY_USERNAME, PROXY_PASSWORD);
+});
+
+app.whenReady().then(() => {
+  // Hide Electron indicators via command line (but keep security enabled)
+  app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+  app.commandLine.appendSwitch('exclude-switches', 'enable-automation');
+  app.commandLine.appendSwitch('disable-dev-shm-usage');
+  // Remove disable-web-security to fix CSP issues
+  // app.commandLine.appendSwitch('disable-web-security');
+  app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
+  
+  // CRITICAL: Prevent file locking during session capture
+  console.log('🔧 Configuring Chromium to prevent file locking...');
+  app.commandLine.appendSwitch('disable-background-timer-throttling');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-features', 'TranslateUI');
+  app.commandLine.appendSwitch('disable-ipc-flooding-protection');
+  app.commandLine.appendSwitch('disable-hang-monitor');
+  app.commandLine.appendSwitch('disable-prompt-on-repost');
+  app.commandLine.appendSwitch('disable-sync');
+  app.commandLine.appendSwitch('disable-background-networking');
+  app.commandLine.appendSwitch('disable-component-extensions-with-background-pages');
+  app.commandLine.appendSwitch('disable-default-apps');
+  app.commandLine.appendSwitch('disable-extensions');
+  app.commandLine.appendSwitch('disable-plugins');
+  app.commandLine.appendSwitch('disable-preconnect');
+  app.commandLine.appendSwitch('disable-translate');
+  app.commandLine.appendSwitch('disable-web-resources');
+  app.commandLine.appendSwitch('aggressive-cache-discard');
+  app.commandLine.appendSwitch('enable-aggressive-domstorage-flushing');
+  app.commandLine.appendSwitch('force-effective-connection-type', '4g');
+  
+  // Use Squid proxy for IP masking
+  const cloudProxyEnabled = process.env.CLOUD_PROXY_ENABLED === 'true';
+  const cloudServerIP = process.env.CLOUD_SERVER_IP || '157.230.51.160';
+  const proxyPort = process.env.CLOUD_PROXY_PORT || '3128'; // Squid default port
+  
+  if (cloudProxyEnabled) {
+    // Set Squid proxy for ALL Electron sessions
+    app.commandLine.appendSwitch('proxy-server', `http://${cloudServerIP}:${proxyPort}`);
+    // Bypass proxy for API server to avoid routing conflicts
+    app.commandLine.appendSwitch('proxy-bypass-list', `${cloudServerIP},localhost,127.0.0.1,<local>`);
+    console.log(`?? IP Masking Enabled via Squid Proxy: ${cloudServerIP}:${proxyPort}`);
+    console.log(`?? API calls bypass proxy: ${cloudServerIP}`);
+  } else {
+    console.log(`?? IP Masking Disabled: Using local IP`);
+  }
+  
+  createLoginWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createLoginWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+function sendStatus(channel, payload) {
+  if (loginWindow) {
+    loginWindow.webContents.send(channel, payload);
+  }
+}
+
+function setupHttp(authToken) {
+  http = axios.create({
+    baseURL: API_BASE_URL,
+    timeout: 45000,
+  });
+
+  if (authToken) {
+    http.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+  }
+}
+
+ipcMain.handle('auth:login', async (_event, credentials) => {
+  try {
+    sendStatus('status:update', { type: 'info', message: 'Authenticating with server…' });
+    const response = await http.post('/auth/login', credentials);
+    tokens = response.data.tokens;
+    currentUser = response.data.user;
+    setupHttp(tokens.accessToken);
+
+    sendStatus('status:update', { type: 'success', message: `Welcome ${currentUser.email}` });
+
+    const sessionsResponse = await http.get('/sessions/my-sessions');
+    const assignedSessions = Array.isArray(sessionsResponse.data) ? sessionsResponse.data : [];
+
+    if (!assignedSessions.length) {
+      sendStatus('status:update', {
+        type: 'warning',
+        message: 'No DAT session assigned to this account yet.',
+      });
+    } else {
+      const session = assignedSessions[0]; // Get the first (shared) session
+      
+      console.log(`?? DEBUG: User role: ${currentUser.role}, Session status: ${session.status}`);
+      console.log(`?? DEBUG: Full user object:`, JSON.stringify(currentUser, null, 2));
+      console.log(`?? DEBUG: Full session object:`, JSON.stringify(session, null, 2));
+      
+      // Check if this is a super admin - ALWAYS launch fresh to update session
+      if (currentUser.role === 'SUPER_ADMIN') {
+        sendStatus('status:update', { 
+          type: 'info', 
+          message: `Super Admin: Launching DAT to update shared session...` 
+        });
+        
+        try {
+          // Super admin always launches a fresh DAT session
+          // This will capture and upload the session automatically
+          await launchFreshDatSession(session.domain?.baseUrl || 'https://one.dat.com', session.id);
+          
+          // Mark the session as ready (if it wasn't already)
+          if (session.status === 'PENDING') {
+            await markSharedSessionAsReady(session.id);
+          }
+          
+          sendStatus('status:update', { 
+            type: 'success', 
+            message: `? Super Admin session active - will auto-save for all users!` 
+          });
+        } catch (launchError) {
+          sendStatus('status:update', { 
+            type: 'error', 
+            message: `Failed to launch super admin DAT session: ${launchError.message}` 
+          });
+          console.error('Super admin launch failed:', launchError);
+        }
+      } else if (session.status === 'READY') {
+        // Session is ready - auto-launch for all users
+        sendStatus('status:update', { 
+          type: 'info', 
+          message: `Auto-launching DAT session: ${session.name}...` 
+        });
+        
+        try {
+          if (session.bundleKey) {
+            // Session has bundle - use normal launch
+            await launchSession(session.id, session.domain?.baseUrl || 'https://one.dat.com');
+          } else {
+            // Session is ready but no bundle - launch fresh DAT window
+            await launchFreshDatSession(session.domain?.baseUrl || 'https://one.dat.com');
+          }
+          
+          sendStatus('status:update', { 
+            type: 'success', 
+            message: `Successfully launched DAT session for ${currentUser.email}` 
+          });
+        } catch (launchError) {
+          sendStatus('status:update', { 
+            type: 'error', 
+            message: `Failed to auto-launch DAT session: ${launchError.message}` 
+          });
+          console.error('Auto-launch failed:', launchError);
+        }
+      } else {
+        // Session is pending but user is not super admin
+        sendStatus('status:update', { 
+          type: 'warning', 
+          message: `DAT session is being set up by super admin. Please wait...` 
+        });
+      }
+    }
+
+    return { user: currentUser, sessions: assignedSessions };
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || 'Login failed';
+    sendStatus('status:update', { type: 'error', message });
+    throw new Error(message);
+  }
+});
+
+// Helper function to launch a session (used for auto-launch after login)
+async function launchSession(sessionId, datUrl) {
+  try {
+    sendStatus('status:update', { type: 'info', message: 'Launching DAT session…' });
+    
+    // Always download fresh session from cloud to ensure latest data
+    sendStatus('status:update', { type: 'info', message: 'Downloading fresh session from cloud…' });
+    
+    console.log(`📥 Always downloading fresh session from cloud...`);
+    
+    // Retry logic for downloading fresh session
+    let downloadSuccess = false;
+    let lastError = null;
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Download attempt ${attempt}/${maxRetries}...`);
+        
+        // Download and restore session data using existing approach
+        const sessionBundle = await downloadSessionBundle(sessionId);
+        
+        console.log(`✅ Fresh session downloaded and extracted successfully!`);
+        downloadSuccess = true;
+        
+        // Launch DAT window with the downloaded session data
+        await launchDatWindow(sessionBundle, datUrl);
+        break;
+        
+      } catch (downloadError) {
+        lastError = downloadError;
+        console.log(`❌ Download attempt ${attempt} failed: ${downloadError.message}`);
+        
+        if (attempt < maxRetries) {
+          console.log(`⏳ Waiting 5 seconds before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      }
+    }
+    
+    if (!downloadSuccess) {
+      throw new Error(`Failed to download fresh session after ${maxRetries} attempts. Last error: ${lastError?.message}`);
+    }
+
+    if (loginWindow) {
+      loginWindow.hide();
+    }
+
+    return { success: true };
+  } catch (error) {
+    const message = error.message || 'Failed to launch session';
+    sendStatus('status:update', { type: 'error', message });
+    throw new Error(message);
+  }
+}
+
+// Helper function to launch a fresh DAT session (for super admin setup)
+async function launchFreshDatSession(datUrl, sessionId) {
+  try {
+    sendStatus('status:update', { type: 'info', message: 'Launching fresh DAT session…' });
+    
+    // For super admin, use session-specific partition so the capture matches what regular users will use
+    const sessionInfo = sessionId ? {
+      partition: `persist:session-${sessionId}`
+    } : null;
+    
+    // Launch DAT window with session-specific partition for super admin
+    await launchDatWindow(sessionInfo, datUrl);
+
+    // For super admin, keep login window visible so they can access save button
+    // For regular users, hide it
+    if (loginWindow && currentUser?.role !== 'SUPER_ADMIN') {
+      loginWindow.hide();
+    }
+
+    // If sessionId is provided (super admin), set up automatic session capture
+    if (sessionId && currentUser?.role === 'SUPER_ADMIN') {
+      setupSuperAdminSessionCapture(sessionId);
+    }
+
+    return { success: true };
+  } catch (error) {
+    const message = error.message || 'Failed to launch fresh DAT session';
+    sendStatus('status:update', { type: 'error', message });
+    throw new Error(message);
+  }
+}
+
+// Helper function to mark shared session as ready (super admin only)
+async function markSharedSessionAsReady(sessionId) {
+  try {
+    sendStatus('status:update', { type: 'info', message: 'Marking shared session as ready…' });
+    const response = await http.post(`/sessions/${sessionId}/mark-ready`);
+    return response.data;
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || 'Failed to mark session as ready';
+    sendStatus('status:update', { type: 'error', message });
+    throw new Error(message);
+  }
+}
+
+// Setup automatic session capture for super admin
+function setupSuperAdminSessionCapture(sessionId) {
+  if (!datWindow) return;
+  
+  console.log(`?? Setting up super admin session capture for session: ${sessionId}`);
+  
+  // Store the session ID globally
+  currentSessionId = sessionId;
+  
+  // Listen for DAT page load completion
+  datWindow.webContents.on('did-finish-load', async () => {
+    const url = datWindow.webContents.getURL();
+    console.log(`?? DAT page loaded: ${url}`);
+    
+    // Check if user is logged into DAT (more comprehensive URL check)
+    const isLoginPage = url.includes('/login') || url.includes('/auth') || url.includes('/signin');
+    const isDatSite = url.includes('dat.com') || url.includes('datloadboard.com');
+    
+    if (isDatSite && !isLoginPage) {
+      console.log(`? Super admin logged into DAT, capturing session in 5 seconds...`);
+      
+      // Wait longer for session data to be created
+      setTimeout(async () => {
+        await captureSuperAdminSession(sessionId);
+      }, 5000); // Increased from 3 to 5 seconds
+    } else {
+      console.log(`? Still on login page, waiting for user to login...`);
+    }
+  });
+  
+  // Also capture when window is closed
+  datWindow.on('close', () => {
+    if (currentUser?.role === 'SUPER_ADMIN' && sessionId) {
+      console.log(`?? DAT window closing, scheduling final session capture...`);
+      const sessionIdForClose = sessionId;
+      setTimeout(() => {
+        captureSuperAdminSession(sessionIdForClose, { allowWindowless: true })
+          .then((result) => {
+            if (!result?.success) {
+              console.warn('?? Post-close capture reported:', result?.message);
+            }
+          })
+          .catch((err) => {
+            console.error('?? Post-close capture failed:', err);
+          });
+      }, 1500);
+    }
+  });
+}
+
+// Capture and upload super admin session
+async function captureSuperAdminSession(sessionId) {
+  try {
+    console.log(`?? Capturing super admin session: ${sessionId}`);
+    sendStatus('status:update', { type: 'info', message: 'Saving session for all users...' });
+    
+    if (!datWindow) {
+      console.log('?? DAT window not available, skipping capture');
+      return;
+    }
+    
+    const session = datWindow.webContents.session;
+    let partition = session.partition;
+    
+    console.log(`?? Session partition value: "${partition}" (type: ${typeof partition})`);
+    
+    // If partition is undefined or empty, construct it from sessionId
+    if (!partition || partition === '' || partition === 'undefined') {
+      partition = `persist:session-${sessionId}`;
+      console.log(`?? Using constructed partition name: "${partition}"`);
+    }
+    
+    // CRITICAL: Configure session to prevent file locking
+    console.log(`?? Configuring session to prevent file locking...`);
+    
+    // Set session preferences to minimize file locking
+    session.setPermissionRequestHandler((webContents, permission, callback) => {
+      callback(true); // Allow all permissions to prevent blocking
+    });
+    
+    // Set aggressive cache limits to prevent file locking
+    session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+      return true; // Allow all permissions
+    });
+    
+    // Configure session to minimize file operations
+    session.webRequest.onBeforeRequest((details, callback) => {
+      // Allow all requests to prevent blocking
+      callback({ cancel: false });
+    });
+    
+    // CRITICAL: Force flush all pending data to disk before zipping
+    console.log(`?? Flushing session data to disk...`);
+    await session.flushStorageData();
+    
+    // Wait for flush to complete
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Clear only non-critical caches to release file locks while preserving login data
+    console.log(`?? Clearing non-critical caches to release file locks...`);
+    await session.clearCache();
+    
+    // Wait longer for the flush and cache clearing to complete
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // CRITICAL: Additional aggressive flushing for Cookies file
+    console.log(`?? Performing aggressive session flushing for Cookies file...`);
+    try {
+      // Force close any open connections that might be locking the Cookies file
+      await session.clearStorageData({
+        storages: ['cookies', 'filesystems', 'indexdb', 'websql']
+      });
+      
+      // Wait for storage clearing to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Force flush again after clearing
+      await session.flushStorageData();
+      
+      // Final wait
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      console.log(`?? Aggressive flushing completed`);
+    } catch (error) {
+      console.log(`?? Aggressive flushing failed: ${error.message}`);
+    }
+    
+    // Get the session data directory
+    const userDataPath = app.getPath('userData');
+    console.log(`?? User data path: ${userDataPath}`);
+    const sessionDataPath = path.join(userDataPath, 'Partitions', partition);
+    
+    console.log(`?? Session data path: ${sessionDataPath}`);
+    
+    // CRITICAL: Verify critical directories exist before capturing
+    console.log(`?? Verifying critical directories exist...`);
+    const criticalDirs = ['Network', 'Local Storage', 'Session Storage'];
+    const missingDirs = [];
+    
+    for (const dir of criticalDirs) {
+      const dirPath = path.join(sessionDataPath, dir);
+      if (!fs.existsSync(dirPath)) {
+        missingDirs.push(dir);
+        console.log(`?? WARNING: Critical directory missing: ${dir}`);
+      } else {
+        console.log(`?? Critical directory found: ${dir}`);
+        // List contents of critical directories
+        try {
+          const contents = fs.readdirSync(dirPath);
+          console.log(`?? Contents of ${dir}: ${contents.slice(0, 5).join(', ')}${contents.length > 5 ? '...' : ''} (${contents.length} items)`);
+        } catch (err) {
+          console.log(`?? Could not read contents of ${dir}: ${err.message}`);
+        }
+      }
+    }
+    
+    if (missingDirs.length > 0) {
+      console.log(`?? WARNING: Some critical directories are missing: ${missingDirs.join(', ')}`);
+      console.log(`?? This may indicate the session is not properly logged in`);
+    }
+    
+    // Check if session directory exists
+    if (!fs.existsSync(sessionDataPath)) {
+      console.log('?? Session data directory not found at expected path');
+      console.log(`?? Expected: ${sessionDataPath}`);
+      
+      // Check if partition exists anywhere in user data
+      const partitionsDir = path.join(userDataPath, 'Partitions');
+      console.log(`?? Checking Partitions directory: ${partitionsDir}`);
+      
+      if (fs.existsSync(partitionsDir)) {
+        const partitions = fs.readdirSync(partitionsDir);
+        console.log(`?? Found partitions: ${partitions.join(', ')}`);
+        
+        // Try to find a partition that matches our session ID
+        const matchingPartition = partitions.find(p => p.includes(sessionId) || p.includes('session'));
+        if (matchingPartition) {
+          console.log(`? Found matching partition: ${matchingPartition}`);
+          const actualPath = path.join(partitionsDir, matchingPartition);
+          console.log(`?? Using actual path: ${actualPath}`);
+          
+          // Use the uploadSessionFromDirectory function which handles locked files
+          await uploadSessionFromDirectory(actualPath, sessionId);
+          
+          sendStatus('status:update', { 
+            type: 'success', 
+            message: '? Session saved and shared with all users!' 
+          });
+          
+          console.log(`?? Super admin session captured and uploaded successfully`);
+          return;
+        }
+      } else {
+        console.log('?? No Partitions directory exists yet');
+      }
+      
+      console.log('?? Session data not ready yet. Please browse DAT more and try again.');
+      throw new Error('Session data directory not found. Please browse DAT for 1-2 minutes before saving.');
+    }
+    
+    // Use the uploadSessionFromDirectory function which handles locked files
+    await uploadSessionFromDirectory(sessionDataPath, sessionId);
+    
+    sendStatus('status:update', { 
+      type: 'success', 
+      message: '? Session saved and shared with all users!' 
+    });
+    
+    console.log(`?? Super admin session captured and uploaded successfully`);
+  } catch (error) {
+    console.error('? Failed to capture super admin session:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      response: error.response?.data
+    });
+    
+    let errorMessage = error.message || 'Session capture failed, but DAT is still accessible';
+    if (error.message.includes('ENOENT')) {
+      errorMessage = 'Session data directory not found. Please browse DAT for 1-2 minutes before saving.';
+    } else if (error.response?.status === 401) {
+      errorMessage = 'Authentication error. Please check API credentials.';
+    } else if (error.message.includes('ECONNREFUSED')) {
+      errorMessage = 'Cannot connect to server. Check network connection.';
+    } else if (error.response?.data?.message) {
+      errorMessage = `Upload failed: ${error.response.data.message}`;
+    } else if (error.message.includes('Session data directory not found')) {
+      errorMessage = 'Session data not ready. Please browse DAT for 1-2 minutes, then try saving again.';
+    }
+    
+    sendStatus('status:update', { 
+      type: 'warning', 
+      message: errorMessage
+    });
+    
+    // Re-throw the error with the actual message for the IPC handler
+    throw new Error(errorMessage);
+  }
+}
+
+async function downloadSessionBundle(sessionId) {
+  try {
+    console.log(`🔄 Starting download process for session: ${sessionId}`);
+    sendStatus('status:update', { type: 'info', message: 'Requesting session bundle…' });
+    
+    console.log(`📡 Requesting download URL from API...`);
+    const request = await http.post(`/sessions/${sessionId}/request-download`, {}, {
+      timeout: 30000  // 30 second timeout for API request
+    });
+    const { url, bundleKey } = request.data;
+
+    if (!url) {
+      throw new Error('Download URL was not provided by the server.');
+    }
+    
+    console.log(`✅ Download URL received: ${url.substring(0, 50)}...`);
+
+    sendStatus('status:update', { type: 'info', message: 'Downloading session profile…' });
+    console.log(`📥 Downloading session bundle...`);
+    
+    const download = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+    });
+
+    console.log(`✅ Session bundle downloaded (${download.data.length} bytes)`);
+
+    const tempZipPath = path.join(os.tmpdir(), `dslb-session-${sessionId}.zip`);
+    fs.writeFileSync(tempZipPath, Buffer.from(download.data));
+    console.log(`💾 Session bundle saved to: ${tempZipPath}`);
+
+    const userData = app.getPath('userData');
+    const partitionsDir = path.join(userData, 'Partitions');
+    // Electron maps persist:session-${sessionId} to session-${sessionId} directory internally
+    const sessionPartitionDir = path.join(partitionsDir, `session-${sessionId}`);
+
+    // AGGRESSIVE cleanup of old partition - remove ALL locked files
+    if (fs.existsSync(sessionPartitionDir)) {
+      console.log(`🧹 AGGRESSIVE cleanup of old partition: ${sessionPartitionDir}`);
+    
+    // Strategy: Multiple cleanup attempts with different methods (no process killing)
+    let cleanupSuccess = false;
+    const cleanupMethods = [
+      { name: 'Rename + Delete', method: () => {
+        const tempPath = `${sessionPartitionDir}-temp-${Date.now()}`;
+        fs.renameSync(sessionPartitionDir, tempPath);
+        fs.rmSync(tempPath, { recursive: true, force: true });
+      }},
+      { name: 'Direct Force Delete', method: () => {
+        fs.rmSync(sessionPartitionDir, { recursive: true, force: true });
+      }},
+      { name: 'Individual File Deletion', method: () => {
+        const deleteRecursive = (dir) => {
+          if (fs.existsSync(dir)) {
+            const files = fs.readdirSync(dir);
+            for (const file of files) {
+              const filePath = path.join(dir, file);
+              try {
+                if (fs.statSync(filePath).isDirectory()) {
+                  deleteRecursive(filePath);
+                } else {
+                  fs.unlinkSync(filePath);
+                }
+              } catch (err) {
+                console.log(`⚠️ Could not delete ${filePath}: ${err.message}`);
+              }
+            }
+            fs.rmdirSync(dir);
+          }
+        };
+        deleteRecursive(sessionPartitionDir);
+      }}
+    ];
+    
+    for (const method of cleanupMethods) {
+      try {
+        console.log(`🔄 Trying cleanup method: ${method.name}`);
+        method.method();
+        console.log(`✅ Cleanup successful with method: ${method.name}`);
+        cleanupSuccess = true;
+        break;
+      } catch (error) {
+        console.log(`❌ Cleanup method ${method.name} failed: ${error.message}`);
+      }
+    }
+    
+    if (!cleanupSuccess) {
+      console.log(`⚠️ All cleanup methods failed - proceeding with extraction anyway`);
+    }
+  }
+
+  sendStatus('status:update', { type: 'info', message: 'Extracting session profile…' });
+  
+  // Wait for file handles to be released after cleanup
+  console.log(`⏳ Waiting for file handles to be released...`);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  const zip = new AdmZip(tempZipPath);
+  const entries = zip.getEntries();
+  const containsPartitions = entries.some((entry) => entry.entryName.startsWith('Partitions/'));
+
+  console.log(`?? Zip contains ${entries.length} entries`);
+  console.log(`?? Contains 'Partitions/' prefix: ${containsPartitions}`);
+
+        // Extract files individually to handle locked files gracefully
+        fs.mkdirSync(sessionPartitionDir, { recursive: true });
+        console.log(`?? Extracting to sessionPartitionDir: ${sessionPartitionDir}`);
+        
+        let extractedCount = 0;
+        let skippedCount = 0;
+        let criticalFilesExtracted = 0;
+        
+        for (const entry of entries) {
+          try {
+            // Extract ALL files - preserve directory structure
+            zip.extractEntryTo(entry, sessionPartitionDir, true, true);
+            extractedCount++;
+            
+            // Track critical files being extracted
+            if (entry.entryName.includes('Network/') || 
+                entry.entryName.includes('Local Storage/') ||
+                entry.entryName.includes('Session Storage/') ||
+                entry.entryName.includes('Preferences')) {
+              criticalFilesExtracted++;
+              console.log(`?? Extracted critical file: ${entry.entryName}`);
+            }
+          } catch (error) {
+            console.log(`?? Failed to extract ${entry.entryName}: ${error.message}`);
+            skippedCount++;
+          }
+        }
+        
+        console.log(`?? Critical files extracted: ${criticalFilesExtracted}`);
+  
+  console.log(`?? Extraction complete: ${extractedCount} files extracted (ALL FILES - complete session capture)`);
+  
+  // CRITICAL: Validate that all essential login files are present
+  console.log(`?? Validating session completeness...`);
+  const validationResults = validateSessionCompleteness(sessionPartitionDir);
+  if (!validationResults.isComplete) {
+    console.log(`?? WARNING: Session validation failed!`);
+    console.log(`?? Missing critical components: ${validationResults.missing.join(', ')}`);
+  } else {
+    console.log(`?? Session validation passed! All critical components present.`);
+  }
+
+  // Check if critical login files were extracted
+  console.log(`?? Starting critical file check for ${sessionPartitionDir}`);
+  console.log(`?? DEBUG: About to check critical files...`);
+  const criticalFiles = [
+    { name: 'Network/Cookies', path: path.join(sessionPartitionDir, 'Network', 'Cookies') },
+    { name: 'Local Storage/leveldb', path: path.join(sessionPartitionDir, 'Local Storage', 'leveldb') },
+    { name: 'Session Storage', path: path.join(sessionPartitionDir, 'Session Storage') },
+    { name: 'Preferences', path: path.join(sessionPartitionDir, 'Preferences') }
+  ];
+  
+  console.log(`?? Checking ${criticalFiles.length} critical files`);
+  criticalFiles.forEach((criticalFile, index) => {
+    try {
+      console.log(`?? Processing critical file ${index + 1}/${criticalFiles.length}: ${criticalFile.name}`);
+      console.log(`?? Checking path: ${criticalFile.path}`);
+      if (fs.existsSync(criticalFile.path)) {
+        console.log(`?? Critical login file found: ${criticalFile.name}`);
+      } else {
+        console.log(`?? WARNING: Critical login file missing: ${criticalFile.name}`);
+        // Check if the directory exists
+        const dirPath = path.dirname(criticalFile.path);
+        if (fs.existsSync(dirPath)) {
+          console.log(`?? Directory exists: ${dirPath}`);
+          const files = fs.readdirSync(dirPath);
+          console.log(`?? Files in directory: ${files.join(', ')}`);
+        } else {
+          console.log(`?? Directory missing: ${dirPath}`);
+        }
+      }
+    } catch (error) {
+      console.log(`?? ERROR processing critical file ${criticalFile.name}: ${error.message}`);
+    }
+  });
+
+  fs.unlinkSync(tempZipPath);
+
+  console.log(`✅ Download and extraction completed successfully!`);
+  return {
+    bundleKey,
+    partition: `persist:session-${sessionId}`,
+  };
+  
+  } catch (error) {
+    console.error(`❌ Download failed: ${error.message}`);
+    console.error(`📋 Error details:`, error);
+    
+    // Clean up temp file if it exists
+    const tempZipPath = path.join(os.tmpdir(), `dslb-session-${sessionId}.zip`);
+    if (fs.existsSync(tempZipPath)) {
+      try {
+        fs.unlinkSync(tempZipPath);
+        console.log(`🧹 Cleaned up temp file: ${tempZipPath}`);
+      } catch (cleanupError) {
+        console.log(`⚠️ Could not clean up temp file: ${cleanupError.message}`);
+      }
+    }
+    
+    // Re-throw the error so the retry logic can handle it
+    throw error;
+  }
+}
+
+async function launchDatWindow(sessionInfo, datUrl) {
+  const partitionName = sessionInfo?.partition || 'persist:dslb-session';
+  const targetUrl = datUrl || DEFAULT_DAT_URL;
+  
+  console.log(`?? Launching DAT window with partition: "${partitionName}"`);
+  
+  // Squid proxy is set globally, no need for per-window config
+  const cloudProxyEnabled = process.env.CLOUD_PROXY_ENABLED === 'true';
+  if (cloudProxyEnabled) {
+    console.log(`?? DAT window will route through Squid proxy (global setting)`);
+  }
+
+  datWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    title: `${BRAND_NAME} - DAT Session`,
+    backgroundColor: '#0f172a',
+    autoHideMenuBar: true,
+    icon: resolvePublicPath('assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/sessionPreload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      enableRemoteModule: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      partition: partitionName,
+      // CRITICAL: Prevent file locking during session operations
+      backgroundThrottling: false,
+      offscreen: false,
+      webSecurity: true,
+      allowDisplayingInsecureContent: false,
+      enableWebSQL: true,
+      enableBlinkFeatures: 'ForceEffectiveConnectionType4g',
+      disableBlinkFeatures: 'AutomationControlled,TranslateUI',
+    },
+  });
+  
+  // Log where session data will be stored
+  const userData = app.getPath('userData');
+  // Electron maps persist:session-${sessionId} to session-${sessionId} directory internally
+  const actualPartitionPath = path.join(userData, 'Partitions', partitionName.replace('persist:', ''));
+  console.log(`?? Expected partition path: ${actualPartitionPath}`);
+
+  // Enhanced User-Agent to avoid Electron detection
+  datWindow.webContents.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  );
+  
+  // Hide Electron indicators
+  datWindow.webContents.executeJavaScript(`
+    // Remove Electron indicators
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined,
+    });
+    
+    // Override chrome runtime
+    if (window.chrome && window.chrome.runtime) {
+      Object.defineProperty(window.chrome.runtime, 'onConnect', {
+        get: () => undefined,
+      });
+    }
+    
+    // Remove electron indicators
+    delete window.require;
+    delete window.exports;
+    delete window.module;
+  `);
+
+  datWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('https://')) {
+      event.preventDefault();
+            dialog.showErrorBox('Navigation blocked', 'Blocked navigation to unsafe URL: ' + url);
+    }
+  });
+
+  datWindow.on('closed', () => {
+    datWindow = null;
+    if (loginWindow) {
+      loginWindow.show();
+    }
+  });
+
+  // For super admin, inject a save button into the DAT page on EVERY page load
+  // IMPORTANT: Attach the listener BEFORE loading the URL
+  if (currentUser && currentUser.role === 'SUPER_ADMIN') {
+    console.log('?? Attaching save button injection for super admin...');
+    datWindow.webContents.on('did-finish-load', () => {
+      console.log('?? Page loaded, injecting save button...');
+      // Always re-inject button on every page load (DAT is a single-page app that navigates)
+      datWindow.webContents.executeJavaScript(`
+        // Remove existing button if present
+        const existingBtn = document.getElementById('dslb-save-btn');
+        if (existingBtn) existingBtn.remove();
+        
+        // Create the save button
+        const saveBtn = document.createElement('button');
+        saveBtn.id = 'dslb-save-btn';
+        saveBtn.innerHTML = '?? Save Session';
+        saveBtn.style.cssText = \`
+          position: fixed;
+          top: 10px;
+          right: 10px;
+          z-index: 999999;
+          padding: 12px 20px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+          transition: all 0.3s ease;
+        \`;
+        saveBtn.onmouseover = () => {
+          saveBtn.style.transform = 'translateY(-2px)';
+          saveBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)';
+        };
+        saveBtn.onmouseout = () => {
+          saveBtn.style.transform = 'translateY(0)';
+          saveBtn.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+        };
+          saveBtn.onclick = async () => {
+            console.log('??? Save button clicked in DAT window');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '?? Saving...';
+            
+            try {
+              console.log('?? Calling window.dslbSession.saveSession()...');
+              
+              if (!window.dslbSession) {
+                throw new Error('dslbSession API not available');
+              }
+              
+              if (!window.dslbSession.saveSession) {
+                throw new Error('saveSession function not available');
+              }
+              
+              const result = await window.dslbSession.saveSession();
+              console.log('? Save session result:', result);
+              
+              saveBtn.innerHTML = '? Saved!';
+              saveBtn.style.background = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+              setTimeout(() => {
+                saveBtn.innerHTML = '?? Save Session';
+                saveBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                saveBtn.disabled = false;
+              }, 3000);
+            } catch (error) {
+              console.error('? Save button error:', error);
+              console.error('Error message:', error.message);
+              console.error('Error stack:', error.stack);
+              
+              saveBtn.innerHTML = '? Failed';
+              saveBtn.style.background = 'linear-gradient(135deg, #eb3349 0%, #f45c43 100%)';
+              alert('Save failed: ' + error.message);
+              setTimeout(() => {
+                saveBtn.innerHTML = '?? Save Session';
+                saveBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                saveBtn.disabled = false;
+              }, 3000);
+            }
+          };
+        document.body.appendChild(saveBtn);
+      `).catch(err => console.error('Failed to inject save button:', err));
+    });
+    
+    // Also inject after initial load completes
+    datWindow.webContents.once('did-finish-load', () => {
+      console.log('?? Initial page load complete, verifying save button...');
+      setTimeout(() => {
+        datWindow.webContents.executeJavaScript(`
+          const btn = document.getElementById('dslb-save-btn');
+          console.log('?? Save button check:', btn ? 'FOUND' : 'NOT FOUND');
+          if (!btn) {
+            console.error('? Save button failed to inject!');
+          }
+        `);
+      }, 1000);
+    });
+  }
+  
+  // Load the URL after setting up all event listeners
+  await datWindow.loadURL(targetUrl);
+}
+
+ipcMain.handle('session:launch', async (_event, payload) => {
+  try {
+    const { sessionId, datUrl } = payload || {};
+    if (!sessionId) {
+      throw new Error('Session ID is required.');
+    }
+
+    sendStatus('status:update', { type: 'info', message: 'Launching DAT session…' });
+    const bundle = await downloadSessionBundle(sessionId);
+    await launchDatWindow(bundle, datUrl);
+
+    if (loginWindow) {
+      loginWindow.hide();
+    }
+
+    return { success: true };
+  } catch (error) {
+    const message = error.message || 'Failed to launch session';
+    sendStatus('status:update', { type: 'error', message });
+    throw new Error(message);
+  }
+});
+
+ipcMain.handle('test:ip', async () => {
+  try {
+    // Squid proxy is set globally, just open the window
+    const ipTestWindow = new BrowserWindow({
+      width: 900,
+      height: 700,
+      title: 'IP Check - Digital Storming Loadboard',
+      autoHideMenuBar: true,
+    });
+    
+    console.log(`?? IP Test Window - Using global Squid proxy`);
+    
+    // Load IP check website
+    await ipTestWindow.loadURL('https://whatismyipaddress.com/');
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to open IP test window:', error);
+    throw new Error('Failed to open IP check: ' + error.message);
+  }
+});
+
+// Manual session save removed - using standalone script instead
+// ipcMain.handle('session:save-manual', async () => {
+  console.log('?? IPC: session:save-manual handler called');
+  console.log('   Current user:', currentUser?.email, currentUser?.role);
+  console.log('   Current session ID:', currentSessionId);
+  console.log('   DAT window exists:', !!datWindow);
+  console.log('   DAT window destroyed:', datWindow?.isDestroyed());
+  
+  try {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      throw new Error('Only super admin can manually save sessions');
+    }
+    
+    if (!currentSessionId) {
+      throw new Error('No active session to save. Please login to DAT first.');
+    }
+    
+    console.log(`?? Manual session save triggered by super admin`);
+    console.log(`   Calling captureSuperAdminSession(${currentSessionId})...`);
+    
+    await captureSuperAdminSession(currentSessionId);
+    
+    console.log(`? captureSuperAdminSession completed successfully`);
+    return { success: true, message: 'Session saved successfully!' };
+  } catch (error) {
+    console.error('? Manual session save failed:', error);
+    console.error('   Error message:', error.message);
+    console.error('   Error stack:', error.stack);
+    throw error;
+  }
+// });
+
+ipcMain.handle('auth:logout', async () => {
+  tokens = null;
+  currentUser = null;
+  setupHttp(null);
+
+  if (datWindow) {
+    datWindow.close();
+  }
+
+  if (loginWindow) {
+    loginWindow.show();
+    loginWindow.focus();
+  }
+
+  sendStatus('status:update', { type: 'info', message: 'Signed out.' });
+  return { success: true };
+});
+
+
+
+
+
+
+

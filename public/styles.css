@@ -1,0 +1,310 @@
+﻿:root {
+  color-scheme: only light;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --dat-blue: #0066cc;
+  --dat-dark-blue: #004499;
+  --text-dark: #333333;
+  --text-gray: #666666;
+  --border-gray: #cccccc;
+  --white: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-image: linear-gradient(to bottom, rgba(59, 72, 84, 0.7) 0%, rgba(25, 33, 41, 0.8) 100%), url('./assets/map.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-container {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+.login-form {
+  background: var(--white);
+  border-radius: 8px;
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.logo-section {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.dat-logo {
+  height: 60px;
+  width: auto;
+  margin-bottom: 20px;
+}
+
+.login-title {
+  font-size: 28px;
+  font-weight: bold;
+  color: var(--text-dark);
+  margin: 0 0 8px 0;
+  text-align: center;
+}
+
+.login-subtitle {
+  font-size: 16px;
+  color: var(--text-gray);
+  margin: 0 0 30px 0;
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  align-items: center;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.form-group input {
+  border: 1px solid var(--border-gray);
+  border-radius: 4px;
+  padding: 12px 16px;
+  font-size: 16px;
+  background: var(--white);
+  color: var(--text-dark);
+  transition: border-color 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--dat-blue);
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+}
+
+.form-group input::placeholder {
+  color: var(--text-gray);
+}
+
+.btn-continue {
+  background: var(--dat-blue);
+  color: var(--white);
+  border: none;
+  border-radius: 4px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: bold;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-continue:hover:not(:disabled) {
+  background: var(--dat-dark-blue);
+}
+
+.btn-continue:disabled {
+  cursor: not-allowed;
+  background: var(--dat-blue);
+}
+
+/* Progress bar inside button */
+.btn-continue::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.2));
+  transition: width 0.3s ease;
+  z-index: 0;
+}
+
+.btn-continue span {
+  position: relative;
+  z-index: 1;
+}
+
+.btn-continue.progress-active::before {
+  width: var(--progress-percent, 0%);
+}
+
+
+/* Hidden elements for session management */
+.hidden {
+  display: none;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.session-item {
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.85);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-item h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.session-item button {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.status-banner {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-gray);
+  border: none;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  min-height: auto;
+  display: none; /* Hide status banner on login screen */
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.status-banner.success {
+  background: transparent;
+  color: var(--text-gray);
+}
+
+.status-banner.error {
+  background: transparent;
+  color: var(--text-gray);
+}
+
+.status-banner.warning {
+  background: transparent;
+  color: var(--text-gray);
+}
+
+.status-banner.info {
+  background: transparent;
+  color: var(--text-gray);
+}
+
+.button-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.button-group button {
+  flex: 1;
+}
+
+.btn-secondary {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-secondary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(15, 23, 42, 0.1);
+}
+
+.btn-info {
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+  color: white;
+}
+
+.btn-info:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(14, 165, 233, 0.25);
+}
+
+.status-info {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.status-info p {
+  margin: 0.5rem 0;
+  color: #059669;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 540px) {
+  .login-form {
+    padding: 30px 20px;
+    margin: 20px;
+  }
+  
+  .dat-logo {
+    height: 50px;
+  }
+  
+  .login-title {
+    font-size: 24px;
+  }
+}
+
+
