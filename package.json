@@ -10,9 +10,11 @@
     "dist:mac": "electron-builder --mac --publish never",
     "dist:win": "electron-builder --win --publish never",
     "create-icon": "node scripts/create-windows-icon.js",
+    "create-mac-icon": "node scripts/create-mac-icon.js",
     "embed-icon": "node scripts/embed-icon.js",
     "prebuild": "npm run create-icon",
     "predist": "npm run create-icon",
+    "predist:mac": "npm run create-mac-icon",
     "postbuild": "npm run embed-icon",
     "postdist": "npm run embed-icon"
   },
@@ -135,7 +137,7 @@
           ]
         }
       ],
-      "icon": "public/assets/icon.png",
+      "icon": "public/assets/icon-512x512.png",
       "category": "public.app-category.business",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
@@ -145,7 +147,7 @@
     },
     "dmg": {
       "title": "${productName} ${version}",
-      "icon": "public/assets/icon.png",
+      "icon": "public/assets/icon-512x512.png",
       "background": null,
       "contents": [
         {

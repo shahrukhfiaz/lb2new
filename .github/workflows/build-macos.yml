@@ -33,8 +33,11 @@ jobs:
       - name: Create build directory
         run: mkdir -p build
       
-      - name: Create icon
+      - name: Create Windows icon
         run: npm run create-icon
+      
+      - name: Create macOS icon (512x512)
+        run: npm run create-mac-icon
       
       - name: Build for macOS (Universal)
         run: npm run dist:mac
