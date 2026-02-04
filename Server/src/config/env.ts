@@ -1,7 +1,12 @@
 ﻿import { config } from 'dotenv';
 import { z } from 'zod';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-config();
+// Explicitly load .env from the Server directory
+// When compiled, __dirname will be dist/config, so go up two levels to Server/.env
+const envPath = path.resolve(__dirname, '../../.env');
+config({ path: envPath });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

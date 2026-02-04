@@ -159,3 +159,4 @@ echo "  3. Set up DigitalOcean Spaces credentials"
 echo "  4. Configure JWT secrets"
 echo ""
 
+

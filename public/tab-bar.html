@@ -27,14 +27,15 @@
       top: 0;
       left: 0;
       right: 0;
-      height: 36px;
+      min-height: 36px;
       background: #202124;
       border-bottom: 1px solid #2f2f2f;
       display: flex;
-      align-items: flex-end;
+      flex-direction: column;
       padding: 0;
       z-index: 999999;
       -webkit-app-region: drag;
+      transition: height 0.2s ease-out;
     }
     
     /* Ensure empty space in tab bar is draggable */
@@ -58,24 +59,38 @@
       display: none; /* Hide drag area - tabs container will handle dragging */
     }
     
+    #dslb-first-row {
+      display: flex;
+      align-items: flex-start;
+      min-height: 36px;
+      flex-shrink: 0;
+      -webkit-app-region: drag;
+      position: relative;
+      width: 100%;
+    }
+    
     #dslb-tabs-container {
       display: flex;
+      flex-wrap: wrap;
       flex: 1;
-      overflow-x: auto;
-      overflow-y: hidden;
-      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
       -webkit-app-region: drag; /* Make container draggable - individual tabs will override */
       scrollbar-width: thin;
       scrollbar-color: #3c4043 #202124;
       -ms-overflow-style: auto;
       position: relative;
       scroll-behavior: smooth;
-      align-items: flex-end;
-      padding-left: 4px;
+      align-items: flex-start;
+      align-content: flex-start;
+      padding: 4px 4px 0 4px;
+      max-height: 200px;
+      min-height: 36px;
+      min-width: 0; /* Allow flex item to shrink below content size */
     }
     
     #dslb-tabs-container::-webkit-scrollbar {
-      height: 6px;
+      width: 6px;
     }
     
     #dslb-tabs-container::-webkit-scrollbar-track {
@@ -95,14 +110,15 @@
       display: flex;
       align-items: center;
       min-width: 100px;
-      max-width: 240px;
+      max-width: 320px;
+      width: 240px;
       height: 28px;
       padding: 0 8px;
       background: #2d2e30;
       border: none;
       border-radius: 8px 8px 0 0;
-      margin-right: 0;
-      margin-left: 1px;
+      margin-right: 1px;
+      margin-bottom: 4px;
       cursor: pointer;
       color: #b1b1b1;
       position: relative;
@@ -269,6 +285,57 @@
       color: #e8eaed;
     }
     
+    .dslb-auto-reload-icon {
+      width: 16px;
+      height: 16px;
+      opacity: 0;
+      margin-left: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa0a6;
+      transition: opacity 0.15s, color 0.15s;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+      font-size: 12px;
+      border-radius: 2px;
+    }
+    
+    .dslb-tab:hover .dslb-auto-reload-icon {
+      opacity: 1;
+    }
+    
+    .dslb-auto-reload-icon:hover {
+      background: rgba(255,255,255,0.1);
+      color: #e8eaed;
+    }
+    
+    .dslb-auto-reload-icon.enabled {
+      opacity: 1;
+      color: #8ab4f8;
+    }
+    
+    .dslb-auto-reload-interval {
+      display: none;
+      margin-left: 4px;
+      background: #2d2e30;
+      border: 1px solid #3c4043;
+      color: #e8eaed;
+      font-size: 11px;
+      padding: 2px 4px;
+      border-radius: 2px;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+      height: 18px;
+      min-width: 50px;
+    }
+    
+    .dslb-auto-reload-interval:hover {
+      background: #3c4043;
+      border-color: #5f6368;
+    }
     
     #dslb-new-tab-btn {
       width: 28px;
@@ -293,13 +360,39 @@
       color: #e8eaed;
     }
     
+    #dslb-tab-bar-controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0;
+      height: 36px;
+      flex-shrink: 0;
+      flex-grow: 0;
+      -webkit-app-region: no-drag;
+      gap: 0;
+      position: relative;
+      z-index: 10;
+    }
+    
+    #dslb-valid-till {
+      display: flex;
+      align-items: center;
+      padding: 0 8px 0 12px;
+      color: #9aa0a6;
+      font-size: 12px;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+      white-space: nowrap;
+      height: 100%;
+    }
+    
     #dslb-window-controls {
       display: flex;
       gap: 0;
       -webkit-app-region: no-drag;
       align-items: center;
       justify-content: flex-end;
-      height: 100%;
+      height: 36px;
       padding: 0;
       flex-shrink: 0;
       flex-grow: 0;
@@ -307,7 +400,7 @@
     
     #dslb-window-controls button {
       width: 46px;
-      height: 32px;
+      height: 36px;
       min-width: 46px;
       max-width: 46px;
       background: transparent;
@@ -326,22 +419,23 @@
       position: relative;
       letter-spacing: 0;
       vertical-align: middle;
+      transition: background-color 0.2s ease;
     }
     
     #dslb-minimize-btn {
-      font-size: 11px;
-      font-weight: 500;
-      padding-top: 1px;
+      font-size: 12px;
+      font-weight: 400;
+      padding-top: 0;
     }
     
     #dslb-maximize-btn {
       font-size: 10px;
       font-weight: 400;
-      padding-top: 1px;
+      padding-top: 0;
     }
     
     #dslb-close-btn {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 300;
       padding-top: 0;
     }
@@ -355,17 +449,30 @@
       background: rgba(232,234,237,0.15);
       color: #e8eaed;
     }
+    
+    #dslb-window-controls button:active {
+      background: rgba(255,255,255,0.15);
+    }
+    
+    #dslb-close-btn:active {
+      background: rgba(232,234,237,0.2);
+    }
   </style>
 </head>
 <body>
   <div id="dslb-tab-bar">
-    <div id="dslb-tabs-container">
-      <button id="dslb-new-tab-btn">+</button>
-    </div>
-    <div id="dslb-window-controls">
-      <button id="dslb-minimize-btn">−</button>
-      <button id="dslb-maximize-btn">□</button>
-      <button id="dslb-close-btn">×</button>
+    <div id="dslb-first-row">
+      <div id="dslb-tabs-container">
+        <button id="dslb-new-tab-btn">+</button>
+      </div>
+      <div id="dslb-tab-bar-controls">
+        <div id="dslb-valid-till">Valid till: Loading...</div>
+        <div id="dslb-window-controls">
+          <button id="dslb-minimize-btn" title="Minimize">−</button>
+          <button id="dslb-maximize-btn" title="Maximize">□</button>
+          <button id="dslb-close-btn" title="Close">×</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -374,6 +481,10 @@
     let activeTabId = null;
     let activeTabInputValue = null;
     let resizeHandler = null;
+    let autoReloadState = new Map(); // Map<tabId, { enabled: boolean, interval: number, intervalId: number }>
+    let validTillUpdateInterval = null;
+    let previousTabCount = 0;
+    let previousRowCount = 1;
 
     // Tab management
     window.dslbTabManager = {
@@ -398,30 +509,9 @@
           activeTabInputValue = null;
         }
         
-        // Calculate dynamic tab width based on number of tabs
-        const containerWidth = container.clientWidth || container.offsetWidth;
-        const plusButtonWidth = 32; // Plus button width
-        const windowControlsWidth = 104; // 3 buttons * 32px + margins
-        const availableWidth = containerWidth - plusButtonWidth - windowControlsWidth - 16; // 16px for padding/margins
-        const tabCount = tabs.length;
-        const minTabWidth = 100;
-        const maxTabWidth = 240;
-        const preferredTabWidth = 140;
-        
-        // Calculate optimal tab width
-        let tabWidth;
-        if (tabCount === 0) {
-          tabWidth = preferredTabWidth;
-        } else {
-          const calculatedWidth = Math.floor(availableWidth / tabCount);
-          if (calculatedWidth >= preferredTabWidth) {
-            // If we have space, use preferred width (140px) or calculated if less
-            tabWidth = Math.max(preferredTabWidth, Math.min(calculatedWidth, maxTabWidth));
-          } else {
-            // If space is limited, use calculated width but not less than minimum
-            tabWidth = Math.max(minTabWidth, calculatedWidth);
-          }
-        }
+        // Use fixed tab width for multi-row layout (tabs will wrap automatically)
+        const preferredTabWidth = 240;
+        const tabWidth = preferredTabWidth;
         
         // Render tabs HTML with dynamic width
         const tabsHTML = tabs.map(tab => {
@@ -430,7 +520,14 @@
           // Truncate long titles for better display with many tabs (CSS will handle ellipsis, but we can also truncate here)
           const escapedTitle = displayTitle.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
           const originalTitle = tab.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-          // No loading indicators - title always stays as "DAT Loadboard" unless user edits
+          // No loading indicators - title always stays as "DAT One" unless user edits
+          
+          // Initialize auto-reload state as disabled if not set
+          if (!autoReloadState.has(tab.id)) {
+            autoReloadState.set(tab.id, { enabled: false, interval: 30 });
+          }
+          
+          const autoReloadStateForTab = autoReloadState.get(tab.id);
           
           return `
             <div class="dslb-tab ${tab.active ? 'active' : ''}" data-tab-id="${tab.id}" title="${displayTitle.replace(/"/g, '&quot;')}" style="width: ${tabWidth}px;">
@@ -441,6 +538,15 @@
                 onmousedown="event.stopPropagation();"
                 title="${displayTitle.replace(/"/g, '&quot;')}">
               <span class="dslb-edit-icon" onclick="event.stopPropagation(); window.dslbTabManager.startEditing('${tab.id}')" title="Edit tab name">✎</span>
+              <span class="dslb-auto-reload-icon ${autoReloadStateForTab.enabled ? 'enabled' : ''}" onclick="event.stopPropagation(); window.dslbTabManager.toggleAutoReload('${tab.id}')" title="Auto Reload">↻</span>
+              <select class="dslb-auto-reload-interval" style="display: ${autoReloadStateForTab.enabled ? 'block' : 'none'};" onchange="event.stopPropagation(); window.dslbTabManager.updateAutoReloadInterval('${tab.id}', parseInt(this.value))" onclick="event.stopPropagation();">
+                <option value="10" ${autoReloadStateForTab.interval === 10 ? 'selected' : ''}>10s</option>
+                <option value="15" ${autoReloadStateForTab.interval === 15 ? 'selected' : ''}>15s</option>
+                <option value="30" ${autoReloadStateForTab.interval === 30 ? 'selected' : ''}>30s</option>
+                <option value="60" ${autoReloadStateForTab.interval === 60 ? 'selected' : ''}>60s</option>
+                <option value="120" ${autoReloadStateForTab.interval === 120 ? 'selected' : ''}>120s</option>
+                <option value="300" ${autoReloadStateForTab.interval === 300 ? 'selected' : ''}>300s</option>
+              </select>
               <button class="dslb-tab-close" onclick="event.stopPropagation(); window.dslbTabManager.closeTab('${tab.id}')" title="Close tab">×</button>
             </div>
           `;
@@ -472,43 +578,59 @@
           container.appendChild(newPlusBtn);
         }
         
-        // Recalculate tab widths when window resizes
-        const recalculateTabWidths = () => {
-          const containerWidth = container.clientWidth || container.offsetWidth;
-          const plusButtonWidth = 32;
-          const windowControlsWidth = 104;
-          const availableWidth = containerWidth - plusButtonWidth - windowControlsWidth - 16;
-          const tabCount = tabs.length;
-          const minTabWidth = 100;
-          const maxTabWidth = 240;
-          const preferredTabWidth = 140;
+        // Update tab bar height based on number of rows
+        // Dynamically adjust height when rows are added or removed
+        const updateTabBarHeight = (forceUpdate = false) => {
+          const tabBar = document.getElementById('dslb-tab-bar');
+          const firstRow = document.getElementById('dslb-first-row');
+          if (!tabBar || !firstRow) return;
           
-          let newTabWidth;
-          if (tabCount === 0) {
-            newTabWidth = preferredTabWidth;
-          } else {
-            const calculatedWidth = Math.floor(availableWidth / tabCount);
-            if (calculatedWidth >= preferredTabWidth) {
-              newTabWidth = Math.max(preferredTabWidth, Math.min(calculatedWidth, maxTabWidth));
-            } else {
-              newTabWidth = Math.max(minTabWidth, calculatedWidth);
+          const currentTabCount = tabs.length;
+          
+          // Calculate number of rows based on container width and tab width
+          // Account for controls on the right (valid till + window controls ~250px)
+          const firstRowWidth = firstRow.clientWidth || firstRow.offsetWidth;
+          const controlsWidth = 250; // Approximate width of valid till + window controls
+          const availableWidth = firstRowWidth - controlsWidth - 8; // Account for padding
+          const containerWidth = Math.max(availableWidth, 200); // Minimum width
+          const tabsPerRow = Math.floor((containerWidth - 40) / (tabWidth + 1)); // Account for margins
+          const requiredRows = currentTabCount > 0 ? Math.ceil((currentTabCount + 1) / Math.max(1, tabsPerRow)) : 1; // +1 for new tab button
+          
+          // Calculate new height
+          const rowHeight = 32; // 28px tab height + 4px margin
+          const firstRowHeight = 36; // Height of first row with controls
+          const additionalRows = Math.max(0, requiredRows - 1); // Additional rows beyond first
+          const tabsHeight = additionalRows * rowHeight;
+          const totalHeight = firstRowHeight + tabsHeight;
+          
+          // Only update if the number of rows has changed (or if forced by resize)
+          // This ensures smooth transitions when tabs are added or removed
+          if (forceUpdate || requiredRows !== previousRowCount || currentTabCount !== previousTabCount) {
+            // Height transition is handled by CSS
+            tabBar.style.height = totalHeight + 'px';
+            
+            // Update previous values
+            previousRowCount = requiredRows;
+            previousTabCount = currentTabCount;
+            
+            // Update main window bounds if needed (this will be handled by main process)
+            if (window.dslbSession && window.dslbSession.updateTabBarHeight) {
+              window.dslbSession.updateTabBarHeight(totalHeight);
             }
           }
-          
-          // Update all tab widths
-          container.querySelectorAll('.dslb-tab').forEach(tabEl => {
-            tabEl.style.width = newTabWidth + 'px';
-          });
         };
+        
+        // Update height after rendering (only if tab count increased)
+        setTimeout(() => updateTabBarHeight(false), 0);
         
         // Recalculate on window resize (remove old listener if exists)
         if (resizeHandler) {
           window.removeEventListener('resize', resizeHandler);
         }
-        resizeHandler = recalculateTabWidths;
+        resizeHandler = () => updateTabBarHeight(true); // Force update on resize
         window.addEventListener('resize', resizeHandler);
         
-        // Auto-scroll to active tab if it's not visible
+        // Auto-scroll to active tab if it's not visible (for vertical scrolling)
         if (activeTabId) {
           setTimeout(() => {
             const activeTabEl = container.querySelector(`.dslb-tab[data-tab-id="${activeTabId}"]`);
@@ -523,13 +645,17 @@
           const tabId = tabEl.dataset.tabId;
           const input = tabEl.querySelector('.dslb-tab-title');
           const closeBtn = tabEl.querySelector('.dslb-tab-close');
-          
-          // Only switch tab when clicking on the tab area, not input, edit icon, or close button
           const editIcon = tabEl.querySelector('.dslb-edit-icon');
+          const autoReloadIcon = tabEl.querySelector('.dslb-auto-reload-icon');
+          const autoReloadInterval = tabEl.querySelector('.dslb-auto-reload-interval');
+          
+          // Only switch tab when clicking on the tab area, not input, edit icon, auto-reload, or close button
           tabEl.addEventListener('click', (e) => {
             if (e.target === input || e.target === editIcon || e.target === closeBtn || 
-                input.contains(e.target) || editIcon.contains(e.target) || closeBtn.contains(e.target)) {
-              return; // Don't switch tab if clicking on input, edit icon, or close button
+                e.target === autoReloadIcon || e.target === autoReloadInterval ||
+                input.contains(e.target) || editIcon.contains(e.target) || closeBtn.contains(e.target) ||
+                autoReloadIcon?.contains(e.target) || autoReloadInterval?.contains(e.target)) {
+              return; // Don't switch tab if clicking on input, edit icon, auto-reload, or close button
             }
             window.dslbTabManager.switchTab(tabId);
           });
@@ -539,12 +665,6 @@
       switchTab(tabId) {
         if (window.dslbSession && window.dslbSession.switchTab) {
           window.dslbSession.switchTab(tabId);
-        }
-      },
-      
-      closeTab(tabId) {
-        if (window.dslbSession && window.dslbSession.closeTab) {
-          window.dslbSession.closeTab(tabId);
         }
       },
       
@@ -594,8 +714,90 @@
         if (window.dslbSession && window.dslbSession.updateTabTitle) {
           window.dslbSession.updateTabTitle(tabId, newTitle);
         }
+      },
+      
+      toggleAutoReload(tabId) {
+        const currentState = autoReloadState.get(tabId) || { enabled: false, interval: 30 };
+        const newEnabled = !currentState.enabled;
+        
+        if (newEnabled) {
+          // Enable auto-reload with current interval (default 30s)
+          autoReloadState.set(tabId, { enabled: true, interval: currentState.interval || 30, intervalId: null });
+          // Start interval via IPC
+          if (window.dslbSession && window.dslbSession.setAutoReload) {
+            window.dslbSession.setAutoReload(tabId, true, currentState.interval || 30);
+          }
+        } else {
+          // Disable auto-reload
+          autoReloadState.set(tabId, { enabled: false, interval: currentState.interval || 30, intervalId: null });
+          // Stop interval via IPC
+          if (window.dslbSession && window.dslbSession.setAutoReload) {
+            window.dslbSession.setAutoReload(tabId, false, 0);
+          }
+        }
+        
+        // Re-render tabs to update UI
+        this.renderTabs();
+      },
+      
+      updateAutoReloadInterval(tabId, seconds) {
+        const currentState = autoReloadState.get(tabId) || { enabled: false, interval: 30 };
+        autoReloadState.set(tabId, { enabled: currentState.enabled, interval: seconds, intervalId: currentState.intervalId });
+        
+        // If auto-reload is enabled, update the interval
+        if (currentState.enabled && window.dslbSession && window.dslbSession.setAutoReload) {
+          window.dslbSession.setAutoReload(tabId, true, seconds);
+        }
+      },
+      
+      closeTab(tabId) {
+        // Clear auto-reload state when tab closes
+        autoReloadState.delete(tabId);
+        if (window.dslbSession && window.dslbSession.closeTab) {
+          window.dslbSession.closeTab(tabId);
+        }
       }
     };
+    
+    // Load and update valid till date
+    async function loadValidTillDate() {
+      try {
+        if (window.dslbSession && window.dslbSession.getBillingStatus) {
+          const status = await window.dslbSession.getBillingStatus();
+          const validTillEl = document.getElementById('dslb-valid-till');
+          if (!validTillEl) return;
+          
+          // Get expiry date from billing status
+          let expiryDate = null;
+          if (status.billingCycleEndDate) {
+            expiryDate = new Date(status.billingCycleEndDate);
+          } else if (status.trialEndDate) {
+            expiryDate = new Date(status.trialEndDate);
+          }
+          
+          if (expiryDate && !isNaN(expiryDate.getTime())) {
+            // Format as MM/DD/YYYY
+            const month = String(expiryDate.getMonth() + 1).padStart(2, '0');
+            const day = String(expiryDate.getDate()).padStart(2, '0');
+            const year = expiryDate.getFullYear();
+            validTillEl.textContent = `Valid till: ${month}/${day}/${year}`;
+          } else {
+            validTillEl.textContent = 'Valid till: N/A';
+          }
+        } else {
+          const validTillEl = document.getElementById('dslb-valid-till');
+          if (validTillEl) {
+            validTillEl.textContent = 'Valid till: N/A';
+          }
+        }
+      } catch (error) {
+        console.error('Error loading valid till date:', error);
+        const validTillEl = document.getElementById('dslb-valid-till');
+        if (validTillEl) {
+          validTillEl.textContent = 'Valid till: N/A';
+        }
+      }
+    }
     
     // New tab button
     const newTabBtn = document.getElementById('dslb-new-tab-btn');
@@ -646,6 +848,41 @@
       });
     }
     
+    // Update maximize button icon based on window state
+    function updateMaximizeButton(isMaximized) {
+      const maximizeBtn = document.getElementById('dslb-maximize-btn');
+      if (maximizeBtn) {
+        // Use different symbols: □ for not maximized, ⛶ (restore) for maximized
+        // Fallback to □ if restore symbol doesn't render
+        try {
+          maximizeBtn.textContent = isMaximized ? '⛶' : '□';
+        } catch (e) {
+          maximizeBtn.textContent = '□'; // Fallback
+        }
+        maximizeBtn.title = isMaximized ? 'Restore' : 'Maximize';
+      }
+    }
+    
+    // Get initial window state and update button
+    if (window.dslbSession && window.dslbSession.getWindowState) {
+      window.dslbSession.getWindowState().then(state => {
+        if (state) {
+          updateMaximizeButton(state.isMaximized);
+        }
+      }).catch(err => {
+        console.error('Failed to get window state:', err);
+      });
+    }
+    
+    // Listen for window state changes
+    if (window.dslbSession && window.dslbSession.onWindowStateChanged) {
+      window.dslbSession.onWindowStateChanged((state) => {
+        if (state) {
+          updateMaximizeButton(state.isMaximized);
+        }
+      });
+    }
+    
     // Set up IPC listener for tab updates when page loads
     if (window.dslbSession && window.dslbSession.onTabsUpdate) {
       window.dslbSession.onTabsUpdate((tabsData) => {
@@ -668,6 +905,10 @@
         console.error('Failed to get initial tabs:', err);
       });
     }
+    
+    // Load valid till date on page load and every 5 minutes
+    loadValidTillDate();
+    validTillUpdateInterval = setInterval(loadValidTillDate, 5 * 60 * 1000); // 5 minutes
   </script>
 </body>
 </html>

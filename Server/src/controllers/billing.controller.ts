@@ -143,3 +143,12 @@ export const checkExpiredAccountsHandler = asyncHandler(async (req: Authenticate
   return res.status(200).json(result);
 });
 
+export const getMyBillingStatusHandler = asyncHandler(async (req: AuthenticatedRequest, res) => {
+  if (!req.user?.id) {
+    throw new AppError('User not authenticated', 401);
+  }
+
+  const status = await getUserBillingStatus(req.user.id);
+  return res.status(200).json(status);
+});
+

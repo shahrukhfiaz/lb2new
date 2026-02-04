@@ -2130,7 +2130,7 @@ async function launchDatWindow(sessionInfo, datUrl) {
   datWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    title: 'DAT Loadboard',
+    title: 'DAT One',
       backgroundColor: '#1e1e1e', // Match tab bar background
     autoHideMenuBar: true,
       frame: false, // Remove native title bar to eliminate blue space
@@ -2273,6 +2273,7 @@ async function launchDatWindow(sessionInfo, datUrl) {
         tabManager.handleResize();
       }
     });
+    
 
     // Create first tab with the session
     let firstTabId;
@@ -2454,6 +2455,19 @@ async function launchDatWindow(sessionInfo, datUrl) {
   // Increase max listeners to avoid warning (allows for multiple tabs)
   datWindow.setMaxListeners(100);
   
+  // Listen for window maximize/unmaximize events to update tab bar
+  datWindow.on('maximize', () => {
+    if (datWindow.webContents && !datWindow.webContents.isDestroyed()) {
+      datWindow.webContents.send('window:state-changed', { isMaximized: true });
+    }
+  });
+  
+  datWindow.on('unmaximize', () => {
+    if (datWindow.webContents && !datWindow.webContents.isDestroyed()) {
+      datWindow.webContents.send('window:state-changed', { isMaximized: false });
+    }
+  });
+  
   logger.log(`✅ DAT window launch completed successfully`);
           } catch (error) {
     logger.error(`❌ CRITICAL ERROR in launchDatWindow: ${error.message}`);
@@ -2529,7 +2543,7 @@ async function launchNewDatWindow(sessionId, datUrl) {
   const newDatWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    title: 'DAT Loadboard',
+    title: 'DAT One',
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
     icon: resolveAppIcon(), // Use robust icon resolution
@@ -2927,12 +2941,118 @@ function setupTabBarIPC(tabManager) {
       } else {
         datWindow.maximize();
       }
+      // Notify tab bar of window state change
+      if (datWindow.webContents && !datWindow.webContents.isDestroyed()) {
+        datWindow.webContents.send('window:state-changed', { isMaximized: datWindow.isMaximized() });
+      }
     }
   });
   
   ipcMain.handle('window:close', () => {
     if (datWindow && !datWindow.isDestroyed()) {
       datWindow.close();
+    }
+  });
+  
+  // Get window state
+  ipcMain.handle('window:get-state', () => {
+    if (datWindow && !datWindow.isDestroyed()) {
+      return {
+        isMaximized: datWindow.isMaximized(),
+        isMinimized: datWindow.isMinimized(),
+        isFullScreen: datWindow.isFullScreen()
+      };
+    }
+    return { isMaximized: false, isMinimized: false, isFullScreen: false };
+  });
+  
+  // Get billing status for current user
+  ipcMain.handle('billing:get-my-status', async () => {
+    try {
+      if (!http || !tokens?.accessToken) {
+        throw new Error('Not authenticated');
+      }
+      const response = await http.get('/billing/my-status');
+      return response.data;
+    } catch (error) {
+      logger.error('Error fetching billing status:', error);
+      throw error;
+    }
+  });
+  
+  // Reload a specific tab
+  ipcMain.handle('tab:reload', async (_event, tabId) => {
+    try {
+      if (!tabManager) {
+        throw new Error('Tab manager not initialized');
+      }
+      await tabManager.reloadTab(tabId);
+      return { success: true };
+    } catch (error) {
+      logger.error('Error reloading tab:', error);
+      throw error;
+    }
+  });
+  
+  // Get current user ID
+  ipcMain.handle('user:get-current-id', () => {
+    return currentUser?.id || null;
+  });
+  
+  // Set auto-reload for a tab
+  ipcMain.handle('tab:set-auto-reload', async (_event, tabId, enabled, intervalSeconds) => {
+    try {
+      if (!tabManager) {
+        throw new Error('Tab manager not initialized');
+      }
+      tabManager.setAutoReload(tabId, enabled, intervalSeconds);
+      return { success: true };
+    } catch (error) {
+      logger.error('Error setting auto-reload:', error);
+      throw error;
+    }
+  });
+  
+  // Update tab bar height
+  ipcMain.handle('tab:update-bar-height', async (_event, height) => {
+    try {
+      if (!tabManager) {
+        return { success: false };
+      }
+      tabManager.tabBarHeight = height;
+      // Update bounds for active tab
+      if (tabManager.activeTabId) {
+        tabManager.updateTabBounds(tabManager.activeTabId);
+      }
+      return { success: true };
+    } catch (error) {
+      logger.error('Error updating tab bar height:', error);
+      return { success: false };
+    }
+  });
+  
+  // Handle zoom for active tab
+  ipcMain.handle('tab:zoom', async (_event, delta) => {
+    try {
+      if (!tabManager || !tabManager.activeTabId) {
+        return { success: false };
+      }
+      
+      const activeTab = tabManager.tabs.get(tabManager.activeTabId);
+      if (!activeTab || !activeTab.view || !activeTab.view.webContents || activeTab.view.webContents.isDestroyed()) {
+        return { success: false };
+      }
+      
+      const currentZoom = activeTab.view.webContents.getZoomLevel();
+      const newZoom = Math.max(-3, Math.min(3, currentZoom + delta)); // Limit zoom between -3 and 3
+      
+      activeTab.view.webContents.setZoomLevel(newZoom);
+      logger.debug(`Zoom level changed to ${newZoom} for tab ${tabManager.activeTabId}`);
+      
+      return { success: true, zoomLevel: newZoom };
+    } catch (error) {
+      logger.error('Error zooming tab:', error);
+      return { success: false };
     }
   });
 }
@@ -3456,6 +3576,17 @@ ipcMain.handle('session:validate', async () => {
     // Check if error is due to session invalidation
     const status = error.response?.status;
     const message = error.response?.data?.message || error.message || '';
+    
+    // Check for account disabled (403 status or "not active" message)
+    // This must be checked BEFORE other error types to ensure immediate logout
+    if (status === 403 || message.includes('not active') || message.includes('User is not active')) {
+      logger.log('🔒 Session validation: Account disabled or not active');
+      return { 
+        valid: false, 
+        reason: 'account_disabled',
+        message: 'Your account has been disabled. Please contact your administrator.'
+      };
+    }
     
     if (message.includes('Session invalidated') || message.includes('another device')) {
       // User was logged in from another device - this is a real invalidation

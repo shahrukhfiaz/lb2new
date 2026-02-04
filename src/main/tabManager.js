@@ -21,6 +21,7 @@ class TabManager {
     this.tabBarHeight = 36; // Height of custom tab bar (matches Chrome)
     this.getUserRole = getUserRole; // Function to get current user role (for security checks)
     this.getAccessDeniedPath = getAccessDeniedPath; // Function to get access denied page path
+    this.autoReloadIntervals = new Map(); // Map<tabId, intervalId> for auto-reload intervals
     
     // Increase max listeners to avoid warning
     if (window && window.setMaxListeners) {
@@ -58,11 +59,11 @@ class TabManager {
     );
 
     // Store tab info with loading state
-    // Note: New tabs start as loading internally, but title always stays "DAT Loadboard" unless user edits it
+    // Note: New tabs start as loading internally, but title always stays "DAT One" unless user edits it
     const tabInfo = {
       id: tabId,
       view: tabView,
-      title: 'DAT Loadboard', // Always start with "DAT Loadboard" - never changes unless user manually edited
+      title: 'DAT One', // Always start with "DAT One" - never changes unless user manually edited
       url: targetUrl,
       sessionInfo,
       partitionName,
@@ -101,13 +102,13 @@ class TabManager {
       }
     }
 
-    // Set up a guard to ensure title always stays "DAT Loadboard" (unless manually edited)
+    // Set up a guard to ensure title always stays "DAT One" (unless manually edited)
     tabInfo.titleGuardInterval = setInterval(() => {
       if (!tabInfo.titleManuallyEdited) {
-        // Only allow "DAT Loadboard" - never show "Loading..." or "Failed to load"
-        if (tabInfo.title !== 'DAT Loadboard') {
-          // Force it back to "DAT Loadboard" if it somehow got changed
-          tabInfo.title = 'DAT Loadboard';
+        // Only allow "DAT One" - never show "Loading..." or "Failed to load"
+        if (tabInfo.title !== 'DAT One') {
+          // Force it back to "DAT One" if it somehow got changed
+          tabInfo.title = 'DAT One';
           this.updateTabBar();
         }
       }
@@ -134,9 +135,9 @@ class TabManager {
       if (shouldLoad) {
         tabView.webContents.loadURL(targetUrl).catch(err => {
           console.error(`Failed to load URL for tab ${tabId}:`, err);
-          // Keep title as "DAT Loadboard" even on error - never show "Failed to load"
+          // Keep title as "DAT One" even on error - never show "Failed to load"
           if (!tabInfo.titleManuallyEdited) {
-            tabInfo.title = 'DAT Loadboard';
+            tabInfo.title = 'DAT One';
           }
           tabInfo.isLoading = false;
           this.updateTabBar();
@@ -144,13 +145,36 @@ class TabManager {
       }
     }
 
-    // Update title when page title changes (but keep default as "DAT Loadboard" unless user edits)
+    // Handle Ctrl+Scroll for zoom in/out
+    tabView.webContents.on('dom-ready', () => {
+      // Inject JavaScript to handle Ctrl+Scroll zoom
+      tabView.webContents.executeJavaScript(`
+        (function() {
+          // Handle mouse wheel with Ctrl
+          document.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              // Send zoom request to main process via IPC
+              if (window.dslbSession && window.dslbSession.zoom) {
+                const delta = e.deltaY > 0 ? -0.5 : 0.5;
+                window.dslbSession.zoom(delta);
+              }
+            }
+          }, { passive: false });
+        })();
+      `).catch(err => {
+        logger.log(`Failed to inject zoom handler for tab ${tabId}:`, err.message);
+      });
+    });
+    
+    // Update title when page title changes (but keep default as "DAT One" unless user edits)
     tabView.webContents.on('page-title-updated', (event, title) => {
       // IGNORE the page title parameter completely - NEVER use it
-      // NEVER update tab title from page title - always keep as "DAT Loadboard" unless user manually edited
+      // NEVER update tab title from page title - always keep as "DAT One" unless user manually edited
       if (!tabInfo.titleManuallyEdited) {
-        // Force it back to "DAT Loadboard" - ignore any page title completely
-        tabInfo.title = 'DAT Loadboard';
+        // Force it back to "DAT One" - ignore any page title completely
+        tabInfo.title = 'DAT One';
       }
       // If user has manually edited, preserve their custom title (don't touch it)
       tabInfo.isLoading = false;
@@ -197,7 +221,7 @@ class TabManager {
       
       // Only set loading state for this specific tab (for internal tracking, not shown in UI)
       tabInfo.isLoading = true;
-      // NEVER change title - always keep as "DAT Loadboard" unless user manually edited
+      // NEVER change title - always keep as "DAT One" unless user manually edited
       this.updateTabBar();
     });
 
@@ -235,10 +259,10 @@ class TabManager {
       
       tabInfo.isLoading = false;
       tabInfo.isReady = true;
-      // ALWAYS force back to "DAT Loadboard" - NEVER use page title
+      // ALWAYS force back to "DAT One" - NEVER use page title
       if (!tabInfo.titleManuallyEdited) {
-        // Force it to "DAT Loadboard" regardless of what it was
-        tabInfo.title = 'DAT Loadboard';
+        // Force it to "DAT One" regardless of what it was
+        tabInfo.title = 'DAT One';
       }
       this.updateTabBar();
     });
@@ -247,9 +271,9 @@ class TabManager {
     tabView.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
       tabInfo.isLoading = false;
       tabInfo.isReady = false;
-      // Keep title as "DAT Loadboard" even on error - never show "Failed to load"
+      // Keep title as "DAT One" even on error - never show "Failed to load"
       if (!tabInfo.titleManuallyEdited) {
-        tabInfo.title = 'DAT Loadboard';
+        tabInfo.title = 'DAT One';
       }
       this.updateTabBar();
     });
@@ -363,7 +387,7 @@ class TabManager {
         this.window.setBrowserView(activeTab.view);
         this.activeTabId = tabId;
 
-        // Title stays as "DAT Loadboard" (or user-edited value) - never show "Loading..."
+        // Title stays as "DAT One" (or user-edited value) - never show "Loading..."
 
         // Update bounds
         this.updateTabBounds(tabId);
@@ -380,6 +404,9 @@ class TabManager {
     if (!this.tabs.has(tabId)) return false;
 
     const tabInfo = this.tabs.get(tabId);
+    
+    // Clear auto-reload interval if it exists
+    this.clearAutoReload(tabId);
     
     // Clear title guard interval
     if (tabInfo.titleGuardInterval) {
@@ -437,9 +464,9 @@ class TabManager {
   updateTabTitle(tabId, newTitle) {
     if (!this.tabs.has(tabId)) return;
     const tabInfo = this.tabs.get(tabId);
-    tabInfo.title = newTitle || 'DAT Loadboard';
+    tabInfo.title = newTitle || 'DAT One';
     // Mark as manually edited if user provided a custom title
-    if (newTitle && newTitle.trim() !== 'DAT Loadboard' && newTitle.trim() !== 'Loading...') {
+    if (newTitle && newTitle.trim() !== 'DAT One' && newTitle.trim() !== 'Loading...') {
       tabInfo.titleManuallyEdited = true;
     }
     this.updateTabBar();
@@ -494,7 +521,58 @@ class TabManager {
     return this.activeTabId;
   }
 
+  reloadTab(tabId) {
+    if (!this.tabs.has(tabId)) {
+      logger.warn(`Cannot reload tab ${tabId}: tab not found`);
+      return;
+    }
+    
+    const tabInfo = this.tabs.get(tabId);
+    if (!tabInfo.view || !tabInfo.view.webContents || tabInfo.view.webContents.isDestroyed()) {
+      logger.warn(`Cannot reload tab ${tabId}: webContents is destroyed`);
+      return;
+    }
+    
+    try {
+      tabInfo.view.webContents.reload();
+      logger.log(`Reloaded tab ${tabId}`);
+    } catch (error) {
+      logger.error(`Error reloading tab ${tabId}:`, error);
+    }
+  }
+  
+  setAutoReload(tabId, enabled, intervalSeconds) {
+    // Clear existing interval if any
+    this.clearAutoReload(tabId);
+    
+    if (enabled && intervalSeconds > 0) {
+      const intervalId = setInterval(() => {
+        this.reloadTab(tabId);
+      }, intervalSeconds * 1000);
+      
+      this.autoReloadIntervals.set(tabId, intervalId);
+      logger.log(`Auto-reload enabled for tab ${tabId} with interval ${intervalSeconds}s`);
+    } else {
+      logger.log(`Auto-reload disabled for tab ${tabId}`);
+    }
+  }
+  
+  clearAutoReload(tabId) {
+    const intervalId = this.autoReloadIntervals.get(tabId);
+    if (intervalId) {
+      clearInterval(intervalId);
+      this.autoReloadIntervals.delete(tabId);
+      logger.log(`Cleared auto-reload for tab ${tabId}`);
+    }
+  }
+
   destroy() {
+    // Clear all auto-reload intervals
+    this.autoReloadIntervals.forEach((intervalId) => {
+      clearInterval(intervalId);
+    });
+    this.autoReloadIntervals.clear();
+    
     // Clean up all BrowserViews
     this.tabs.forEach((tabInfo) => {
       // Clear title guard interval

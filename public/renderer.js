@@ -359,6 +359,27 @@ document.addEventListener('DOMContentLoaded', () => {
           consecutiveFailures++;
           console.log(`🔒 Session validation failed (${consecutiveFailures}/${MAX_FAILURES}):`, result.reason);
           
+          // If account is disabled, logout immediately (don't wait for 3 failures)
+          if (result.reason === 'account_disabled') {
+            console.log('🔒 Account disabled - logging out immediately');
+            clearInterval(sessionValidationInterval);
+            sessionValidationInterval = null;
+            
+            setStatus(result.message || 'Your account has been disabled. Please contact your administrator.', 'warning');
+            
+            // Force logout IMMEDIATELY
+            await window.dslb.logout('account_disabled');
+            cachedSessions = [];
+            sessionPanel.classList.add('hidden');
+            form.style.display = 'flex';
+            form.reset();
+            emailEntered = false;
+            passwordGroup.style.display = 'none';
+            isLoggingIn = false; // Reset login state
+            setLoginButtonState(true, 'CONTINUE', null);
+            return; // Exit immediately
+          }
+          
           // If explicitly logged out from another device, logout immediately (don't wait for 3 failures)
           if (result.reason === 'logged_out_from_another_device') {
             console.log('🔒 Session invalidated from another device - logging out immediately');

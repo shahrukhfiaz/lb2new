@@ -9,11 +9,15 @@ import {
   setTrialPeriodHandler,
   getExpiredAccountsHandler,
   checkExpiredAccountsHandler,
+  getMyBillingStatusHandler,
 } from '../controllers/billing.controller';
 
 const router = Router();
 
-// All billing routes require authentication and admin role
+// User route - allows any authenticated user to get their own billing status
+router.get('/my-status', authenticate(), getMyBillingStatusHandler);
+
+// All other billing routes require authentication and admin role
 router.use(authenticate(['SUPER_ADMIN', 'ADMIN']));
 
 // User-specific billing operations

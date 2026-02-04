@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('dslbSession', {
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  zoom: (delta) => ipcRenderer.invoke('tab:zoom', delta),
 // Manual session save removed - using standalone script instead
 // saveSession: () => ipcRenderer.invoke('session:save-manual'),
 });
