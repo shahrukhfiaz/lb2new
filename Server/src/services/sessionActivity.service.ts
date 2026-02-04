@@ -118,10 +118,23 @@ export async function updateSessionActivity(sessionToken: string) {
 
 /**
  * Get all active sessions
+ * Only includes sessions with recent activity (within last 5 minutes)
+ * This ensures online status is accurate - users who closed the app won't show as online
  */
 export async function getActiveSessions(limit: number = 100) {
+  // Calculate cutoff time: 5 minutes ago
+  // Users without activity in the last 5 minutes are considered offline
+  const cutoffTime = new Date();
+  cutoffTime.setMinutes(cutoffTime.getMinutes() - 5);
+
   const sessions = await prisma.sessionActivity.findMany({
-    where: { isActive: true },
+    where: { 
+      isActive: true,
+      // Only include sessions with recent activity (within last 10 minutes)
+      lastActivityAt: {
+        gte: cutoffTime
+      }
+    },
     include: {
       user: {
         select: {
@@ -131,7 +144,7 @@ export async function getActiveSessions(limit: number = 100) {
         },
       },
     },
-    orderBy: { loginAt: 'desc' },
+    orderBy: { lastActivityAt: 'desc' },
     take: limit,
   });
 
@@ -140,12 +153,21 @@ export async function getActiveSessions(limit: number = 100) {
 
 /**
  * Get active sessions for a specific user
+ * Only includes sessions with recent activity (within last 5 minutes)
  */
 export async function getUserActiveSessions(userId: string) {
+  // Calculate cutoff time: 5 minutes ago
+  const cutoffTime = new Date();
+  cutoffTime.setMinutes(cutoffTime.getMinutes() - 5);
+
   const sessions = await prisma.sessionActivity.findMany({
     where: {
       userId,
       isActive: true,
+      // Only include sessions with recent activity (within last 10 minutes)
+      lastActivityAt: {
+        gte: cutoffTime
+      }
     },
     orderBy: { loginAt: 'desc' },
   });
